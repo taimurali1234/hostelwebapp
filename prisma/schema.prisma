@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String         @id @default(uuid())
+  name          String
+  email         String         @unique
+  password      String
+  phone         String
+  address       String?
+  role          Role           @default(USER)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  isVerified    Boolean        @default(false)
+  aiActions     AiAction[]
+  bookings      Booking[]
+  notifications Notification[]
+  reviews       Review[]
+}
+
+model Room {
+  id          String      @id @default(uuid())
+  title       String
+  type        RoomType
+  beds        Int
+  washrooms   Int
+  price       Int
+  description String
+  isAvailable Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  bookings    Booking[]
+  reviews     Review[]
+  images      RoomImage[]
+}
+
+model RoomImage {
+  id     String @id @default(uuid())
+  url    String
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+}
+
+model Booking {
+  id          String        @id @default(uuid())
+  userId      String
+  roomId      String
+  checkIn     DateTime
+  checkOut    DateTime
+  totalAmount Int
+  status      BookingStatus @default(PENDING)
+  createdAt   DateTime      @default(now())
+  room        Room          @relation(fields: [roomId], references: [id])
+  user        User          @relation(fields: [userId], references: [id])
+  payment     Payment?
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  bookingId     String        @unique
+  paymentMethod PaymentMethod
+  paymentStatus PaymentStatus
+  transactionId String
+  createdAt     DateTime      @default(now())
+  booking       Booking       @relation(fields: [bookingId], references: [id])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  roomId    String
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+  room      Room     @relation(fields: [roomId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model AiAction {
+  id        String   @id @default(uuid())
+  userId    String
+  action    String
+  payload   Json
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+enum Role {
+  USER
+  COORDINATOR
+  ADMIN
+}
+
+enum RoomType {
+  SINGLE
+  SHARED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  STRIPE
+  PAYPAL
+  EASYPAISA
+}
+
+enum PaymentStatus {
+  SUCCESS
+  FAILED
+  PENDING
+}
