@@ -28,11 +28,13 @@ model Room {
   id          String      @id @default(uuid())
   title       String
   type        RoomType
+  floor       String
   beds        Int
   washrooms   Int
   price       Int
   description String
-  isAvailable Boolean     @default(true)
+  status      RoomStatus  @default(AVAILABLE)
+  availableSeats  AvailableSeats @default(ALL)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   bookings    Booking[]
@@ -110,8 +112,14 @@ enum Role {
 
 enum RoomType {
   SINGLE
-  SHARED
+  DOUBLE_SHARING
+  TRIPLE_SHARING
+  QUAD_SHARING
+  QUINT_SHARING
+  VIP_SUIT
+
 }
+
 
 enum BookingStatus {
   PENDING
@@ -129,4 +137,16 @@ enum PaymentStatus {
   SUCCESS
   FAILED
   PENDING
+}
+enum RoomStatus{
+  AVAILABLE
+  BOOKED
+  RESERVED
+}
+enum AvailableSeats{
+  ALL
+  ONE_SEAT
+  TWO_SEATS
+  THREE_SEATS
+  FOUR_SEATS
 }
