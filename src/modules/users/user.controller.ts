@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import prisma from "../../config/prismaClient";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
@@ -19,8 +19,9 @@ const coordinatorEmails = process.env.COORDINATOR_EMAILS?.split(",") || [];
 
 export const registerUser = async (
   req: Request,
-  res: Response
-): Promise<Response> => {
+  res: Response,
+  next:NextFunction
+): Promise<Response | void> => {
   try {
     const parsedData: RegisterUserDTO = RegisterUserSchema.parse(req.body);
     const { name, email, password, phone,address } = parsedData;
@@ -101,15 +102,15 @@ export const registerUser = async (
     return res.json({message:"You are successfully registered as an Admin"})
     
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    next(error)
   }
 };
 
 export const verifyEmail =async (
 req:Request,
-res:Response
-):Promise<Response> => {
+res:Response,
+next:NextFunction
+):Promise<Response | void> => {
 try {
 const { token, email } = req.query as {
 token:string;
@@ -131,14 +132,14 @@ data: {isVerified:true },
 
 return res.send("✅ Email verified successfully. You can now log in.");
   }catch (error) {
-console.error(error);
-return res.status(500).send("Server error");
+  next(error)
   }
 };
 export const resendVerifyEmail =async (
 req:Request,
-res:Response
-):Promise<Response> => {
+res:Response,
+next:NextFunction
+):Promise<Response | void> => {
 try {
 const { email } = req.body as {
 email:string;
@@ -165,15 +166,15 @@ email:string;
       message: "We have sent the verification email again. Please check your inbox.",
     });
   }catch (error) {
-console.error(error);
-return res.status(500).send("Server error");
+ next(error)
   }
 };
 
 export const loginUser = async (
   req:Request,
-  res:Response
-):Promise<Response>=>{
+  res:Response,
+  next:NextFunction
+):Promise<Response | void>=>{
 
   try {
 
@@ -219,7 +220,7 @@ return res.status(400).json({message:"Invalid credentials" });
 
     
   } catch (error) {
-    return res.status(500).json({message:"Server error" });
+    next(error)
 
   }
 
@@ -228,7 +229,8 @@ return res.status(400).json({message:"Invalid credentials" });
 
 export const getAllUsers = async (
   req:Request,
-  res:Response
+  res:Response,
+  next:NextFunction
 ):Promise<Response | void>=>{
 
   try {
@@ -248,14 +250,15 @@ export const getAllUsers = async (
     res.json({message:"Fetched all the users successfully",filteredUsers})
     
   } catch (error) {
-    res.json({message:"Server Error",error})
+    next(error)
   }
 
 }
 export const getSingleUser = async (
   req: Request,
-  res: Response
-): Promise<Response> => {
+  res: Response,
+  next:NextFunction
+): Promise<Response | void> => {
   try {
     const { id } = req.params;
 
@@ -277,14 +280,15 @@ export const getSingleUser = async (
     return res.json(user);
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ message: "Server error" });
+    next(error)
   }
 };
 
 export const updateUser = async (
   req: Request,
-  res: Response
-): Promise<Response> => {
+  res: Response,
+  next:NextFunction
+): Promise<Response | void> => {
   try {
     const { id } = req.params;
     const parsedData:updateDTO = updateSchema.parse(req.body);
@@ -316,16 +320,14 @@ export const updateUser = async (
       user: updatedUser,
     });
   } catch(error){
-return res.status(500).json({
-      message: "Server Error",
-      error,
-    });
+    next(error)
   }
 }
 export const deleteUser = async (
   req: Request,
-  res: Response
-): Promise<Response> => {
+  res: Response,
+  next:NextFunction
+): Promise<Response | void> => {
   try {
     const { id } = req.params;
 
@@ -336,7 +338,7 @@ export const deleteUser = async (
     return res.status(200).json({ message: "User deleted successfully" });
   }
   catch(error){
-   return res.status(500).json({message:"Server error",error})
+   next(error)
   }
 }
 
