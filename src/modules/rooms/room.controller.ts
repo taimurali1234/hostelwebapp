@@ -1,54 +1,59 @@
 import { NextFunction, Request, Response } from "express";
-import { createRoomDTO, createRoomSchema, updateRoomDTO, updateRoomSchema } from "./RoomDTOS/room.dtos";
+import {
+  createRoomDTO,
+  createRoomSchema,
+  updateRoomDTO,
+  updateRoomSchema,
+} from "./RoomDTOS/room.dtos";
 import prisma from "../../config/prismaClient";
+import { deleteFromS3 } from "../../utils/uploadToS3";
 
 export const createRoom = async (
   req: Request,
   res: Response,
-  next:NextFunction
+  next: NextFunction
 ): Promise<Response | void> => {
-
-    try {
-        const parsedData:createRoomDTO = createRoomSchema.parse(req.body);
-        const {title,type,floor,beds,washrooms,price,description} = parsedData;
-        const room = await prisma.room.create({
-            data:{
-                title,
-                type,
-                floor,
-                beds,
-                washrooms,
-                price,
-                description
-
-            }
-        })
-        res.status(201).json({message:"Room is successfully Created",room})
-    } catch (error) {
-        next(error)
-    }
+  try {
+    const parsedData: createRoomDTO = createRoomSchema.parse(req.body);
+    const { title, type, floor, beds, washrooms, price, description } =
+      parsedData;
+    const room = await prisma.room.create({
+      data: {
+        title,
+        type,
+        floor,
+        beds,
+        washrooms,
+        price,
+        description,
+      },
+    });
+    res.status(201).json({ message: "Room is successfully Created", room });
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const updateRoom = async (
   req: Request,
   res: Response,
-  next:NextFunction
+  next: NextFunction
 ): Promise<Response | void> => {
+  try {
+    const { id } = req.params;
+    const parsedData: updateRoomDTO = updateRoomSchema.parse(req.body);
+    // const {title,type,floor,beds,washrooms,price,description,status,availableSeats} = parsedData;
 
-    try {
-          const {id} = req.params  
-        const parsedData:updateRoomDTO = updateRoomSchema.parse(req.body);
-        // const {title,type,floor,beds,washrooms,price,description,status,availableSeats} = parsedData;
-
-        
-        const room = await prisma.room.update({
-            where:{id},
-            data: parsedData
-        })
-        res.status(201).json({message:"Room data is successfully updated ",room})
-    } catch (error) {
-        next(error)
-    }
+    const room = await prisma.room.update({
+      where: { id },
+      data: parsedData,
+    });
+    res
+      .status(201)
+      .json({ message: "Room data is successfully updated ", room });
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const getRooms = async (
@@ -108,43 +113,62 @@ export const getRooms = async (
 export const getSingleRoom = async (
   req: Request,
   res: Response,
-  next:NextFunction
+  next: NextFunction
 ): Promise<Response | void> => {
-
-    try {
-
-        const {id} = req.params
-        const room = await prisma.room.findUnique({
-            where:{id},
-            include:{images:true}
-        })
-        if (!room) {
+  try {
+    const { id } = req.params;
+    const room = await prisma.room.findUnique({
+      where: { id },
+      include: { images: true },
+    });
+    if (!room) {
       return res.status(404).json({ message: "room not found" });
     }
-        res.status(200).json({message:"Sinle Room fetched successfully",room})
-    } catch (error) {
-        next(error)
-    }
+    res.status(200).json({ message: "Sinle Room fetched successfully", room });
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const deleteRoom = async (
   req: Request,
   res: Response,
-  next:NextFunction
+  next: NextFunction
 ): Promise<Response | void> => {
-
-    try {
-
-        const {id} = req.params
-        const room = await prisma.room.delete({
-            where:{id}
-        })
-        if (!room) {
-      return res.status(404).json({ message: "room not found" });
+  try {
+    const { id } = req.params;
+    const roomExists = await prisma.room.findUnique({ where: { id } });
+    if (!roomExists) {
+      return res.status(404).json({ message: "Room not found" });
     }
-        res.status(200).json({message:"Room deleted successfully"})
-    } catch (error) {
-        next(error)
-    }
+    const images = await prisma.roomImage.findMany({
+      where: { roomId: id },
+      select: { url: true },
+    });
+    const videos = await prisma.roomVideo.findMany({
+      where:{roomId:id},
+      select:{url:true}
+    })
+    await Promise.all(
+      images.map((img) => {
+        const key = decodeURIComponent(img.url.split("/").slice(-2).join("/"));
+        console.log(key)
+         return deleteFromS3(key);
+      })
+    );
+    await Promise.all(
+       videos.map((video) => {
+        const key = decodeURIComponent(video.url.split("/").slice(-2).join("/"));
+        console.log(key)
+         return deleteFromS3(key);
+      })
+    )
+    const room = await prisma.room.delete({
+      where: { id },
+    });
+
+    res.status(200).json({ message: "Room deleted successfully" });
+  } catch (error) {
+    next(error);
+  }
 };
-

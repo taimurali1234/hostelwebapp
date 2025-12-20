@@ -40,12 +40,22 @@ model Room {
   bookings    Booking[]
   reviews     Review[]
   images      RoomImage[]
+  videos      RoomVideo[]
+}
+model RoomVideo{
+  id     String @id @default(uuid())
+  url    String
+  roomId String
+  createdAt   DateTime    @default(now())
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
 }
 
 model RoomImage {
   id     String @id @default(uuid())
   url    String
   roomId String
+  createdAt   DateTime    @default(now())
   room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
 }
 
