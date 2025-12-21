@@ -7,6 +7,7 @@ import {
 } from "./RoomDTOS/room.dtos";
 import prisma from "../../config/prismaClient";
 import { deleteFromS3 } from "../../utils/uploadToS3";
+import constants from "constants";
 
 export const createRoom = async (
   req: Request,
@@ -15,8 +16,19 @@ export const createRoom = async (
 ): Promise<Response | void> => {
   try {
     const parsedData: createRoomDTO = createRoomSchema.parse(req.body);
-    const { title, type, floor, beds, washrooms, price, description } =
+    const { title, type, floor, beds, washrooms, description,availableSeats } =
       parsedData;
+      const seatPricing = await prisma.seatPricing.findFirst({
+  where: {
+    roomType: type,
+    isActive: true,
+  },
+});
+if (!seatPricing) {
+  return res.status(400).json({
+    message: "Seat pricing not found for this room type",
+  });
+}
     const room = await prisma.room.create({
       data: {
         title,
@@ -24,8 +36,9 @@ export const createRoom = async (
         floor,
         beds,
         washrooms,
-        price,
         description,
+        price:seatPricing.price,
+        availableSeats: availableSeats ?? 0
       },
     });
     res.status(201).json({ message: "Room is successfully Created", room });
@@ -42,11 +55,20 @@ export const updateRoom = async (
   try {
     const { id } = req.params;
     const parsedData: updateRoomDTO = updateRoomSchema.parse(req.body);
-    // const {title,type,floor,beds,washrooms,price,description,status,availableSeats} = parsedData;
+     const {title,type,floor,beds,washrooms,description,status,availableSeats} = parsedData;
 
     const room = await prisma.room.update({
       where: { id },
-      data: parsedData,
+      data: {
+        title,
+        type,
+        floor,
+        beds,
+        washrooms,
+        description,
+        status,
+        availableSeats: availableSeats ?? 0
+      },
     });
     res
       .status(201)

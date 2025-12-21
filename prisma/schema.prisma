@@ -31,16 +31,18 @@ model Room {
   floor       String
   beds        Int
   washrooms   Int
-  price       Int
   description String
+  price       Int?
   status      RoomStatus  @default(AVAILABLE)
-  availableSeats  AvailableSeats @default(ALL)
+  bookedSeats Int @default(0)
+  availableSeats  Int @default(0)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   bookings    Booking[]
   reviews     Review[]
   images      RoomImage[]
   videos      RoomVideo[]
+
 }
 model RoomVideo{
   id     String @id @default(uuid())
@@ -50,6 +52,15 @@ model RoomVideo{
   room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
 }
+model SeatPricing {
+  id        String   @id @default(uuid())
+  roomType  RoomType 
+  price     Int
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 
 model RoomImage {
   id     String @id @default(uuid())
@@ -63,11 +74,23 @@ model Booking {
   id          String        @id @default(uuid())
   userId      String
   roomId      String
+
+  baseAmount    Int
+  taxAmount     Int?
+  discount      Int?
+
+  bookingType   BookingType @default(SHORT_TERM)
+  seatsSelected Int  
+
+  status        BookingStatus @default(PENDING)
+  source        BookingSource @default(WEBSITE)
+
   checkIn     DateTime
-  checkOut    DateTime
+  checkOut    DateTime?
   totalAmount Int
-  status      BookingStatus @default(PENDING)
-  createdAt   DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  cancelledAt   DateTime?
   room        Room          @relation(fields: [roomId], references: [id])
   user        User          @relation(fields: [userId], references: [id])
   payment     Payment?
@@ -131,10 +154,22 @@ enum RoomType {
 }
 
 
+enum BookingType {
+  SHORT_TERM
+  LONG_TERM
+}
+
 enum BookingStatus {
   PENDING
   CONFIRMED
   CANCELLED
+  COMPLETED
+}
+
+enum BookingSource {
+  WEBSITE
+  ADMIN
+  MOBILE
 }
 
 enum PaymentMethod {
@@ -151,12 +186,4 @@ enum PaymentStatus {
 enum RoomStatus{
   AVAILABLE
   BOOKED
-  RESERVED
-}
-enum AvailableSeats{
-  ALL
-  ONE_SEAT
-  TWO_SEATS
-  THREE_SEATS
-  FOUR_SEATS
 }
