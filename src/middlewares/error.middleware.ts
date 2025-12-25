@@ -23,11 +23,11 @@ export const errorHandler = (err:unknown, req:Request, res:Response, next:NextFu
   }
 
   // Custom app errors
-//   if (err instanceof AppError) {
-//     return res.status(err.statusCode).json({
-//       message: err.message,
-//     });
-//   }
+  // if (err instanceof AppError) {
+  //   return res.status(err.statusCode).json({
+  //     message: err.message,
+  //   });
+  // }
 if (err instanceof multer.MulterError) {
     // Too many files
     if (err.code === "LIMIT_UNEXPECTED_FILE") {

@@ -8,10 +8,10 @@ router.post("/register",registerUser)
 router.post("/login",loginUser)
 router.post("/resendEmail",resendVerifyEmail)
 router.get("/verifyEmail",verifyEmail)
-router.get("/",authenticateUserWithRole(["ADMIN"]),getAllUsers)
+router.get("/",authenticateUserWithRole(["ADMIN","USER"]),getAllUsers)
 router.get("/:id",authenticateUser,getSingleUser)
 router.patch("/:id",authenticateUser,updateUser)
-router.delete("/:id",authenticateUserWithRole(["ADMIN"]),deleteUser)
+router.delete("/:id",authenticateUserWithRole(["ADMIN","USER"]),deleteUser)
 
 
 export default router

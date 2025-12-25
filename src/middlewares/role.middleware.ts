@@ -17,10 +17,12 @@ const token = req.cookies.token ||
       throw new Error("JWT_SECRET is missing");
     }
         const decoded=jwt.verify(token,process.env.JWT_SECRET) as CustomJwtPayload;
+        console.log(decoded)
         if (!roles.includes(decoded.role)) {
                 return res.status(403).json({ message: 'Forbidden: You do not have the required permissions' });
             }
-            req.user={userId:decoded.id,role:decoded.role};
+            req.user={userId:decoded.userId,role:decoded.role};
+            console.log(req.user)
             next();
     }
     catch(error){

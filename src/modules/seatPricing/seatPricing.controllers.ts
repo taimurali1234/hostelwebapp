@@ -8,11 +8,12 @@ import {
   
 } from "./seatPricingDTOS/seatPricing.dtos";
 import prisma from "../../config/prismaClient";
+import { tr } from "zod/v4/locales";
 
 export const createSeatPricing = async (req: Request, res: Response,next:NextFunction): Promise<Response | void> => {
   try {
     const parsedData:createseatPricingDTO = createseatPricingSchema.parse(req.body)
-    const { roomType, price, isActive } = parsedData;
+    const { roomType, price, isActive,stayType } = parsedData;
 
     // const existing = await prisma.seatPricing.findUnique({
     //   where: { roomType },
@@ -25,6 +26,7 @@ export const createSeatPricing = async (req: Request, res: Response,next:NextFun
       data: {
         roomType,
         price,
+        stayType,
         isActive: isActive ?? true,
       },
     });
@@ -70,12 +72,12 @@ export const updateSeatPricing = async (req: Request, res: Response,next:NextFun
 const parsedData: updateseatPricingDTO =
   updateseatPricingSchema.parse(req.body);
 
-const { price, isActive } = parsedData;
+const { price, isActive,stayType } = parsedData;
     const updatedSeatPricing = await prisma.$transaction(async (tx) => {
   // 1️⃣ Get existing seat pricing to know roomType
   const seatPricing = await tx.seatPricing.findUnique({
     where: { id },
-    select: { roomType: true },
+    select: { roomType: true,stayType:true },
   });
 
   if (!seatPricing) {
@@ -86,6 +88,7 @@ const { price, isActive } = parsedData;
   await tx.room.updateMany({
     where: {
       type: seatPricing.roomType,
+      stayType:seatPricing.stayType
     },
     data: {
       price: price,

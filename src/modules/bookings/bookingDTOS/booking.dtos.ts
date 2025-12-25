@@ -7,9 +7,22 @@ import {
 /**
  * CREATE BOOKING
  */
+export const previewBookingSchema = z
+  .object({
+    roomId: z.string().uuid("Invalid roomId"),
+    price:z.number(),
+    bookingType: z.nativeEnum(BookingType).optional(),
+    couponCode: z.string().min(0).optional(),
+    seatsSelected: z.number().min(1, "At least 1 seat must be selected"),
+
+  })
+  
+
+
+
 export const createBookingSchema = z
   .object({
-    userId: z.string().uuid("Invalid userId"),
+    // userId: z.string().uuid("Invalid userId"),
     roomId: z.string().uuid("Invalid roomId"),
 
     bookingType: z.nativeEnum(BookingType),
@@ -21,6 +34,7 @@ export const createBookingSchema = z
     baseAmount: z.number().min(0, "Base amount must be >= 0"),
     taxAmount: z.number().min(0).optional(),
     discount: z.number().min(0).optional(),
+    couponCode: z.string().min(0).optional(),
 
     seatsSelected: z.number().min(1, "At least 1 seat must be selected"),
     totalAmount: z.number().min(0, "Total amount must be >= 0"),
@@ -61,6 +75,8 @@ export const updateBookingSchema = z
     baseAmount: z.number().min(0).optional(),
     taxAmount: z.number().min(0).optional(),
     discount: z.number().min(0).optional(),
+    couponCode: z.string().min(0).optional(),
+
 
     seatsSelected: z.number().min(1).optional(),
     totalAmount: z.number().min(0).optional(),
@@ -90,3 +106,4 @@ export const updateBookingSchema = z
 
 export type createBookingDTO = z.infer<typeof createBookingSchema>;
 export type updateBookingDTO = z.infer<typeof updateBookingSchema>;
+export type previewBookingDTO = z.infer<typeof previewBookingSchema>;

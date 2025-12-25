@@ -14,6 +14,7 @@ import {
   updateSchema
 } from "../users/DTOs/userRegister.dtos";
 import { Role } from "@prisma/client";
+import { publishToQueue } from "../../config/rabitmq";
 const adminEmails = process.env.ADMIN_EMAILS?.split(",") || [];
 const coordinatorEmails = process.env.COORDINATOR_EMAILS?.split(",") || [];
 
@@ -87,18 +88,29 @@ export const registerUser = async (
       "host"
     )}/api/users/verifyEmail?token=${emailToken}&email=${email}`;
 
+
     await sendEmail(
       email,
       "Verify your email",
       `<p>Click below to verify your email:</p>
        <a href="${verificationLink}">Verify Email</a>`
     );
+    await publishToQueue('AUTH_NOTIFICATION.USER_CREATED', {
+                userId: user.id,
+                type: "AUTH_NOTIFICATION.USER_CREATED",
+                message: "Verification email sent. Please check your inbox.",
+            })
 
     return res.json({
       message: "Verification email sent. Please check your inbox.",
     });
 
     }
+    await publishToQueue('AUTH_NOTIFICATION.USER_CREATED', {
+                userId: user.id,
+                type: "AUTH_NOTIFICATION.USER_CREATED",
+                message: "You are successfully registered as an Admin",
+            })
     return res.json({message:"You are successfully registered as an Admin"})
     
   } catch (error) {

@@ -7,7 +7,7 @@ datasource db {
   provider = "postgresql"
 }
 
-model User {
+model User { 
   id            String         @id @default(uuid())
   name          String
   email         String         @unique
@@ -33,9 +33,9 @@ model Room {
   washrooms   Int
   description String
   price       Int?
+  stayType    BookingType  @default(LONG_TERM)
   status      RoomStatus  @default(AVAILABLE)
   bookedSeats Int @default(0)
-  availableSeats  Int @default(0)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   bookings    Booking[]
@@ -54,7 +54,8 @@ model RoomVideo{
 }
 model SeatPricing {
   id        String   @id @default(uuid())
-  roomType  RoomType 
+  roomType  RoomType
+  stayType  BookingType  @default(LONG_TERM)
   price     Int
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -78,6 +79,7 @@ model Booking {
   baseAmount    Int
   taxAmount     Int?
   discount      Int?
+  couponCode   String?
 
   bookingType   BookingType @default(SHORT_TERM)
   seatsSelected Int  
@@ -95,6 +97,14 @@ model Booking {
   user        User          @relation(fields: [userId], references: [id])
   payment     Payment?
 }
+model TaxConfig {
+  id        String   @id @default(uuid())
+  percent   Int      @default(16)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 
 model Payment {
   id            String        @id @default(uuid())
@@ -109,11 +119,11 @@ model Payment {
 model Notification {
   id        String   @id @default(uuid())
   userId    String
-  title     String
   message   String
+  type      String
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Review {

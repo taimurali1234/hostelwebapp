@@ -16,7 +16,7 @@ export const createRoom = async (
 ): Promise<Response | void> => {
   try {
     const parsedData: createRoomDTO = createRoomSchema.parse(req.body);
-    const { title, type, floor, beds, washrooms, description,availableSeats } =
+    const { title, type, floor, beds, washrooms, description} =
       parsedData;
       const seatPricing = await prisma.seatPricing.findFirst({
   where: {
@@ -37,8 +37,7 @@ if (!seatPricing) {
         beds,
         washrooms,
         description,
-        price:seatPricing.price,
-        availableSeats: availableSeats ?? 0
+        price:seatPricing.price
       },
     });
     res.status(201).json({ message: "Room is successfully Created", room });
@@ -55,7 +54,7 @@ export const updateRoom = async (
   try {
     const { id } = req.params;
     const parsedData: updateRoomDTO = updateRoomSchema.parse(req.body);
-     const {title,type,floor,beds,washrooms,description,status,availableSeats} = parsedData;
+     const {title,type,floor,beds,washrooms,description,status} = parsedData;
 
     const room = await prisma.room.update({
       where: { id },
@@ -66,8 +65,7 @@ export const updateRoom = async (
         beds,
         washrooms,
         description,
-        status,
-        availableSeats: availableSeats ?? 0
+        status
       },
     });
     res
@@ -139,18 +137,48 @@ export const getSingleRoom = async (
 ): Promise<Response | void> => {
   try {
     const { id } = req.params;
+
+    // 1️⃣ Get room with images
     const room = await prisma.room.findUnique({
       where: { id },
-      include: { images: true },
+      include: {
+        images: true,
+      },
     });
+
     if (!room) {
-      return res.status(404).json({ message: "room not found" });
+      return res.status(404).json({ message: "Room not found" });
     }
-    res.status(200).json({ message: "Sinle Room fetched successfully", room });
+
+    // 2️⃣ Get seat pricing for this room type
+    const seatPricings = await prisma.seatPricing.findMany({
+      where: {
+        roomType: room.type,
+        isActive: true,
+      },
+      select: {
+        stayType: true,
+        price: true,
+      },
+    });
+
+    // 3️⃣ Format pricing
+    const prices = seatPricings.reduce((acc, item) => {
+      acc[item.stayType] = item.price;
+      return acc;
+    }, {} as Record<string, number>);
+
+    // 4️⃣ Final response
+    return res.status(200).json({
+      message: "Single Room fetched successfully",
+      room,
+      prices, // { SHORT_TERM: 2500, LONG_TERM: 45000 }
+    });
   } catch (error) {
     next(error);
   }
 };
+
 
 export const deleteRoom = async (
   req: Request,
