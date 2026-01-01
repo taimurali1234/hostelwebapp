@@ -82,7 +82,7 @@ export const registerUser = async (
       const emailToken = crypto.randomBytes(32).toString("hex");
 
     // Save token in Redis (1 hour)
-    await redis.setex(`verify:${email}`, 60, emailToken);
+    await redis.setex(`verify:${email}`, 3600, emailToken);
 
     const verificationLink = `${req.protocol}://${req.get(
       "host"
@@ -95,22 +95,14 @@ export const registerUser = async (
       `<p>Click below to verify your email:</p>
        <a href="${verificationLink}">Verify Email</a>`
     );
-    await publishToQueue('AUTH_NOTIFICATION.USER_CREATED', {
-                userId: user.id,
-                type: "AUTH_NOTIFICATION.USER_CREATED",
-                message: "Verification email sent. Please check your inbox.",
-            })
+    
 
     return res.json({
       message: "Verification email sent. Please check your inbox.",
     });
 
     }
-    await publishToQueue('AUTH_NOTIFICATION.USER_CREATED', {
-                userId: user.id,
-                type: "AUTH_NOTIFICATION.USER_CREATED",
-                message: "You are successfully registered as an Admin",
-            })
+    
     return res.json({message:"You are successfully registered as an Admin"})
     
   } catch (error) {
@@ -139,10 +131,23 @@ await prisma.user.update({
 where: { email },
 data: {isVerified:true },
     });
+    const user = await prisma.user.findUnique({
+      where:{email}
+    })
+    console.log(user)
 
 // await redis.del(`verify:${email}`);
+if(user){
+await publishToQueue('AUTH_NOTIFICATION.USER_CREATED', {
+                userId: user.id,
+                title:"Welocme",
+                audience:"USER",
+                message: `Welocme ${user.name}. You have been successfully registered with us.`,
+            })
+}
 
 return res.send("✅ Email verified successfully. You can now log in.");
+
   }catch (error) {
   next(error)
   }
@@ -240,32 +245,91 @@ return res.status(400).json({message:"Invalid credentials" });
 }
 
 export const getAllUsers = async (
-  req:Request,
-  res:Response,
-  next:NextFunction
-):Promise<Response | void>=>{
-
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
   try {
-    const users = await prisma.user.findMany(
-      {
-        select:{
-          id:true,
-          name:true,
-          email:true,
-          phone:true,
-          role:true,
-          createdAt:true
-        }
-      }
-    )
-    const filteredUsers = users.filter(user=>user.role!=="ADMIN")
-    res.json({message:"Fetched all the users successfully",filteredUsers})
-    
-  } catch (error) {
-    next(error)
-  }
+    const {
+      search = "",
+      role,
+      verified,
+      page = "1",
+      limit = "10",
+    } = req.query;
 
-}
+    const pageNumber = Number(page);
+    const pageSize = Number(limit);
+    const skip = (pageNumber - 1) * pageSize;
+
+    /* =========================
+       WHERE CLAUSE (DYNAMIC)
+    ========================== */
+
+    const where: any = {
+      role: {
+        not: "ADMIN", // ❌ always exclude admins
+      },
+    };
+
+    // 🔍 Search (name, email, phone)
+    if (search) {
+      where.OR = [
+        { name: { contains: search as string, mode: "insensitive" } },
+        { email: { contains: search as string, mode: "insensitive" } },
+        { phone: { contains: search as string, mode: "insensitive" } },
+      ];
+    }
+
+    // 🎭 Role filter
+    if (role) {
+      where.role = role;
+    }
+
+    // ✅ Verification filter
+    if (verified === "true" || verified === "false") {
+      where.isVerified = verified === "true";
+    }
+
+    /* =========================
+       DB QUERIES
+    ========================== */
+
+    const [users, total] = await Promise.all([
+      prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          role: true,
+          isVerified: true,
+          createdAt: true,
+        },
+        skip,
+        take: pageSize,
+        orderBy: {
+          createdAt: "desc",
+        },
+      }),
+
+      prisma.user.count({ where }),
+    ]);
+
+    return res.json({
+      users,
+      total,
+      page: pageNumber,
+      limit: pageSize,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+
 export const getSingleUser = async (
   req: Request,
   res: Response,
@@ -281,6 +345,9 @@ export const getSingleUser = async (
         name: true,
         email: true,
         phone: true,
+        role:true,
+        address:true,
+        isVerified:true,
         createdAt: true,
       },
     });
@@ -288,7 +355,7 @@ export const getSingleUser = async (
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-
+   
     return res.json(user);
   } catch (error) {
     console.error(error);
@@ -299,42 +366,56 @@ export const getSingleUser = async (
 export const updateUser = async (
   req: Request,
   res: Response,
-  next:NextFunction
+  next: NextFunction
 ): Promise<Response | void> => {
   try {
     const { id } = req.params;
-    const parsedData:updateDTO = updateSchema.parse(req.body);
-    const { name, phone,address }=parsedData
 
-    // Optional: allow only self unless ADMIN
-    if (req.user?.userId !== id && req.user?.role !== "ADMIN") {
-      return res.status(403).json({ message: "Forbidden" });
+    const parsedData: updateDTO = updateSchema.parse(req.body);
+    console.log(parsedData)
+    const { name, phone, address, role, isVerified } = parsedData;
+
+    // 🔐 Authorization
+    // if (req.user?.userId !== id && req.user?.role !== "ADMIN") {
+    //   return res.status(403).json({ message: "Forbidden" });
+    // }
+
+    // 🧠 Build update object safely
+    const updateData: any = {};
+
+    if (name !== undefined) updateData.name = name;
+    if (phone !== undefined) updateData.phone = phone;
+    if (address !== undefined) updateData.address = address;
+
+    // 🔥 Only ADMIN can change these
+    if (req.user?.role === "ADMIN") {
+      if (role !== undefined) updateData.role = role;
+      if (isVerified !== undefined) updateData.isVerified = isVerified;
     }
 
     const updatedUser = await prisma.user.update({
       where: { id },
-      data: {
-        name,
-        phone,
-        address
-      },
+      data: updateData,
       select: {
         id: true,
         name: true,
         email: true,
         phone: true,
-        address:true
+        address: true,
+        role: true,
+        isVerified: true,
       },
     });
 
-    return res.status(201).json({
+    return res.status(200).json({
       message: "User updated successfully",
-      user: updatedUser,
+      updatedUser,
     });
-  } catch(error){
-    next(error)
+  } catch (error) {
+    next(error);
   }
-}
+};
+
 export const deleteUser = async (
   req: Request,
   res: Response,

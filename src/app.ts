@@ -8,21 +8,27 @@ import seatPricingRoutes from "./modules/seatPricing/seatPricing.routes";
 import taxConfigRoutes from "./modules/bookings/taxConfig/taxconfig.routes";
 import bookingRoutes from "./modules/bookings/booking.routes"
 import reviewsRoutes from "./modules/reviews/review.routes"
+import notificationRoutes from "./modules/notifications/notification.routes"
+import dasdboardRoutes from "./modules/Dashboard/dashbaord.routes"
 import { errorHandler } from "./middlewares/error.middleware";
 
 const app = express();
 
 app.use(express.json());
 app.use(cookieParser());
-app.use(cors({
- origin:"http://localhost:3000",
- credentials:true
-}
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
    
 
-));
 
-app.get("/", (req, res) => res.json({ status: "ok" }));
+
+app.get("/health", (req, res) => res.json({ status: "ok" }));
 app.use("/api/users",authRoutes)
 app.use("/api/rooms",roomRoutes)
 app.use("/api/rooms/uploads",roomImageRoutes)
@@ -30,6 +36,9 @@ app.use("/api/seat-pricing", seatPricingRoutes);
 app.use("/api/tax-config", taxConfigRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/reviews", reviewsRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/dashboard", dasdboardRoutes);
+
 
 app.use(errorHandler);
 export default app;

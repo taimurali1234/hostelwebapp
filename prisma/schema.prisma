@@ -116,21 +116,38 @@ model Payment {
   booking       Booking       @relation(fields: [bookingId], references: [id])
 }
 
+
+
 model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  message   String
-  type      String
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
-  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+
+  // Who should receive it
+  audience    NotificationAudience
+
+  // Optional: specific user (only when audience = USER)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+
+  // Content
+  title       String?
+  message     String
+  severity    NotificationSeverity @default(INFO)
+
+  // State
+  isRead      Boolean  @default(false)
+
+  // Metadata
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
+
 
 model Review {
   id        String   @id @default(uuid())
   userId    String
   roomId    String
   rating    Int
+  status    reviewStatus  @default(PENDING)
   comment   String?
   createdAt DateTime @default(now())
   room      Room     @relation(fields: [roomId], references: [id])
@@ -145,6 +162,21 @@ model AiAction {
   status    String   @default("PENDING")
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
+}
+enum NotificationAudience {
+  USER        // single user
+  ADMIN       // admins only
+  ALL_USERS   // broadcast
+}
+
+enum NotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+enum reviewStatus{
+  APPROVED
+  PENDING
 }
 
 enum Role {

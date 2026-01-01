@@ -4,8 +4,6 @@ import jwt from "jsonwebtoken";
 import cookie from "cookie";
 import { CustomJwtPayload } from "../types/jwt";
 
-
-
 interface AuthenticatedSocket extends Socket {
   user?: CustomJwtPayload;
   token?: string;
@@ -16,11 +14,15 @@ export let io: Server;
 export const initSocketServer = (httpServer: http.Server) => {
   io = new Server(httpServer, {
     path: "/socket.io/",
-    
+    cors: {
+      origin: true,
+      credentials: true,
+    },
   });
-//   console.log(io)
 
-  // 🔐 Socket Auth Middleware
+  /* =========================
+     🔐 SOCKET AUTH MIDDLEWARE
+     ========================= */
   io.use((socket: AuthenticatedSocket, next) => {
     try {
       const cookies = socket.handshake.headers?.cookie;
@@ -28,12 +30,11 @@ export const initSocketServer = (httpServer: http.Server) => {
         return next(new Error("No cookies found"));
       }
 
-      const { token } = cookies ? cookie.parse(cookies) : {};
+      const { token } = cookie.parse(cookies);
 
       if (!token) {
         return next(new Error("Token not provided"));
       }
-      console.log(token)
 
       const decoded = jwt.verify(
         token,
@@ -49,18 +50,42 @@ export const initSocketServer = (httpServer: http.Server) => {
     }
   });
 
-  // 🔌 Socket Connection
+  /* =========================
+     🔌 SOCKET CONNECTION
+     ========================= */
   io.on("connection", (socket: AuthenticatedSocket) => {
-    const userId = socket.user!.userId;
+    const { userId, role } = socket.user!;
 
-    console.log("Socket connected:", userId);
-   
-    socket.join("5365fb12-1518-4778-b1d7-09e59f52b6df");
+    console.log("🔌 Socket connected:", userId);
 
-    // 🏠 Join personal room
+    /* =========================
+       🏠 PERSONAL ROOM
+       ========================= */
+    socket.join(userId);
+
+    /* =========================
+       👥 ALL USERS ROOM
+       ========================= */
+    socket.join("users");
+
+    /* =========================
+       🛡 ADMIN ROOM
+       ========================= */
+    if (role === "ADMIN") {
+      socket.join("admins");
+      console.log("🛡 Admin joined admins room:", userId);
+    }
+
+    /* =========================
+       📦 OPTIONAL: SEND MISSED NOTIFICATIONS
+       ========================= */
+    socket.on("userConnected", () => {
+      console.log("User connected event:", userId);
+      // yahan DB se unread notifications emit kar sakte ho
+    });
 
     socket.on("disconnect", () => {
-      console.log("Socket disconnected:", userId);
+      console.log("❌ Socket disconnected:", userId);
     });
   });
 };

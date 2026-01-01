@@ -1,9 +1,12 @@
 import { Router } from "express";
-import { getMyNotifications, markAsRead } from "./notification.controllers";
+import { createNotification, deleteNotification, getMyNotifications, markAsRead } from "./notification.controllers";
+import authenticateUserWithRole from "../../middlewares/role.middleware";
 
 const router = Router();
 
-router.get("/", getMyNotifications);
-router.put("/:id/read", markAsRead);
+router.post("/",authenticateUserWithRole(["ADMIN"]),createNotification);
+router.get("/",authenticateUserWithRole(["ADMIN"]), getMyNotifications);
+router.patch("/:id/read", markAsRead);
+router.delete("/:id",authenticateUserWithRole(["ADMIN"]), deleteNotification);
 
 export default router;

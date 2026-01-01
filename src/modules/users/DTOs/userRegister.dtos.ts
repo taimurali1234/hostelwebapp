@@ -16,7 +16,9 @@ export const LoginSchema = z.object({
 export const updateSchema = z.object({
   name:z.string().optional(),
   phone: z.string().regex(/^(0\d{10}|\+?[1-9]\d{9,14})$/, "Invalid phone number").optional(),
-  address: z.string().optional()
+  address: z.string().optional(),
+  role: z.enum(["ADMIN", "USER", "COORDINATOR"]).optional(),
+  isVerified: z.boolean().optional(),
 })
 
 

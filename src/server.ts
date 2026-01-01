@@ -7,7 +7,14 @@ import { startNotificationWorker } from "./modules/notifications/notification.se
 const server = http.createServer(app);
 
 (async () => {
-  await connectRabit();
+  const rabbitConnected =   await connectRabit();
+
+
+  if (rabbitConnected) {
+  startNotificationWorker();
+} else {
+  console.warn("Notification worker NOT started");
+}
   await initSocketServer(server);
   await startNotificationWorker();
 

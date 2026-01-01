@@ -5,10 +5,10 @@ import authenticateUser from "../../middlewares/auth.middleware";
 const router = express.Router();
 
 
-router.post("/create",authenticateUserWithRole(["ADMIN"]),createRoom)
-router.patch("/:id",authenticateUserWithRole(["ADMIN"]),updateRoom)
-router.get("/",authenticateUser,getRooms)
-router.get("/:id",authenticateUser,getSingleRoom)
-router.delete("/:id",authenticateUserWithRole(["ADMIN"]),deleteRoom)
+router.post("/",createRoom)
+router.patch("/:id",updateRoom)
+router.get("/",getRooms)
+router.get("/:id",getSingleRoom)
+router.delete("/:id",deleteRoom)
 
 export default router

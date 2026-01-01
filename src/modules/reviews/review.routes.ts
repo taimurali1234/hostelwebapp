@@ -13,10 +13,10 @@ import authenticateUserWithRole from "../../middlewares/role.middleware";
 const router = Router();
 
 // All routes require authentication
-router.post("/", authenticateUser, createReview);
-router.get("/", authenticateUserWithRole(["ADMIN","USER"]), getAllReviews);
-router.patch("/:id", authenticateUserWithRole(["ADMIN","USER"]), updateReview);
-router.delete("/:id", authenticateUserWithRole(["ADMIN"]), deleteReview);
+router.post("/", createReview);
+router.get("/", getAllReviews);
+router.patch("/:id", updateReview);
+router.delete("/:id", deleteReview);
 
 // Public routes
 router.get("/room/:roomId", getReviewsForRoom);

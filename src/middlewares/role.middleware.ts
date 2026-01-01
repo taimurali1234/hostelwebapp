@@ -10,7 +10,7 @@ const token = req.cookies.token ||
                 ? authHeader.split(" ")[1]
                 : null);
     if (!token) {
-            return res.status(401).json({ message: 'No token provided, authorization denied' });
+            return res.status(401).json({ message: 'You are not Authenticated to perform this action, authorization denied' });
         }
     try{
         if (!process.env.JWT_SECRET) {
@@ -26,7 +26,7 @@ const token = req.cookies.token ||
             next();
     }
     catch(error){
-        return res.status(401).json({message:'Invalid authentication token',error});
+        return res.status(401).json({message:'Sorry, You are not authenticated',error});
     }
 }
 export default authenticateUserWithRole

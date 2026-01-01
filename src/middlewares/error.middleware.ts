@@ -6,12 +6,11 @@ import { ZodError } from "zod";
 export const errorHandler = (err:unknown, req:Request, res:Response, next:NextFunction) => {
   // Zod
   if (err instanceof ZodError) {
-    return res.status(400).json({
-      message: "Validation failed",
-      errors: err.flatten().fieldErrors,
-    });
-  }
-
+  return res.status(400).json({
+    message: err.issues[0]?.message || "Validation failed",
+    errors: err.flatten().fieldErrors,
+  });
+}
   // Prisma
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     switch (err.code) {

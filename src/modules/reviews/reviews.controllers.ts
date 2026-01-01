@@ -3,13 +3,17 @@ import prisma from "../../config/prismaClient";
 import { createReviewDTO, createReviewSchema, updateReviewDTO, updateReviewSchema } from "./reviewDTOS/reviews.dtos";
 
 export const createReview = async (req: Request, res: Response, next: NextFunction) => {
+  console.log("api hit")
   try {
     const parsedData:createReviewDTO = createReviewSchema.parse(req.body);
-    const userId = req.user?.userId;
+    // let userId = req.user?.userId;
+    // if(!userId){
+    //   userId= parsedData.userId
+    // }
 
-    if (!userId) return res.status(401).json({ message: "Not authenticated" });
+    // if (!userId) return res.status(401).json({ message: "Not authenticated" });
 
-    const { roomId, rating, comment } = parsedData;
+    const { roomId, rating, comment,userId} = parsedData;
 
     // Optional: check if room exists
     const room = await prisma.room.findUnique({ where: { id: roomId } });
@@ -41,9 +45,9 @@ export const updateReview = async (req: Request, res: Response, next: NextFuncti
     if (!review) return res.status(404).json({ message: "Review not found" });
 
     // Ownership check
-    if (review.userId !== userId) {
-      return res.status(403).json({ message: "Not your review" });
-    }
+    // if (review.userId !== userId) {
+    //   return res.status(403).json({ message: "Not your review" });
+    // }
 
     const updatedReview = await prisma.review.update({
       where: { id },
@@ -65,9 +69,9 @@ export const deleteReview = async (req: Request, res: Response, next: NextFuncti
     const review = await prisma.review.findUnique({ where: { id } });
     if (!review) return res.status(404).json({ message: "Review not found" });
 
-    if (review.userId !== userId) {
-      return res.status(403).json({ message: "Not your review" });
-    }
+    // if (review.userId !== userId) {
+    //   return res.status(403).json({ message: "Not your review" });
+    // }
 
     await prisma.review.delete({ where: { id } });
     res.status(200).json({ message: "Review deleted successfully" });
@@ -138,44 +142,103 @@ export const getReview = async (req: Request, res: Response, next: NextFunction)
 
 // get all reviews
 
-export const getAllReviews = async (req: Request, res: Response, next: NextFunction) => {
+export const getAllReviews = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
   try {
-    // Extract query params
     const {
-      skip = "0",         // number of records to skip
-      take = "10",        // number of records to take
-      sortBy = "createdAt", // field to sort
-      order = "desc",     // asc | desc
-      minRating,          // optional filter
-      maxRating
+      page = "1",
+      limit = "10",
+      search,
+      status,
+      rating,
+      sortBy = "createdAt",
+      order = "desc",
     } = req.query;
 
-    // Convert skip & take to numbers
-    const skipNum = parseInt(skip as string, 10) || 0;
-    const takeNum = parseInt(take as string, 10) || 10;
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 10;
+    const skip = (pageNum - 1) * limitNum;
 
-    // Build where filter
+    /* ======================
+       WHERE FILTER
+    ====================== */
     const where: any = {};
-    if (minRating) where.rating = { gte: Number(minRating) };
-    if (maxRating) where.rating = { ...where.rating, lte: Number(maxRating) };
 
-    // Fetch reviews with pagination & sorting
-    const reviews = await prisma.review.findMany({
-      where,
-      include: { user: true, room: true },
-      orderBy: { [sortBy as string]: order as "asc" | "desc" },
-      skip: skipNum,
-      take: takeNum,
-    });
+    // ⭐ Exact rating filter (from dropdown)
 
-    if (!reviews || reviews.length === 0) {
-      return res.status(404).json({ message: "No reviews found" });
+    if (status) {
+  where.status = status;
+}
+
+    if (rating) {
+      where.rating = Number(rating);
     }
 
-    res.status(200).json({ reviews });
+    // 🔍 Search (user name / room title / comment)
+    if (search) {
+      where.OR = [
+        {
+          comment: {
+            contains: search as string,
+            mode: "insensitive",
+          },
+        },
+        {
+          user: {
+            name: {
+              contains: search as string,
+              mode: "insensitive",
+            },
+          },
+        },
+        {
+          room: {
+            title: {
+              contains: search as string,
+              mode: "insensitive",
+            },
+          },
+        },
+      ];
+    }
+
+    /* ======================
+       DB QUERY
+    ====================== */
+    const [reviews, total] = await Promise.all([
+      prisma.review.findMany({
+        where,
+        include: {
+          user: {
+            select: { id: true, name: true },
+          },
+          room: {
+            select: { id: true, title: true },
+          },
+        },
+        orderBy: {
+          [sortBy as string]: order === "asc" ? "asc" : "desc",
+        },
+        skip,
+        take: limitNum,
+      }),
+
+      prisma.review.count({ where }),
+    ]);
+
+    res.status(200).json({
+      reviews,
+      total,
+      page: pageNum,
+      limit: limitNum,
+    });
   } catch (error) {
     next(error);
   }
 };
+
 
 

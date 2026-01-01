@@ -18,6 +18,7 @@ export const createRoom = async (
     const parsedData: createRoomDTO = createRoomSchema.parse(req.body);
     const { title, type, floor, beds, washrooms, description} =
       parsedData;
+      console.log(parsedData)
       const seatPricing = await prisma.seatPricing.findFirst({
   where: {
     roomType: type,
@@ -54,6 +55,7 @@ export const updateRoom = async (
   try {
     const { id } = req.params;
     const parsedData: updateRoomDTO = updateRoomSchema.parse(req.body);
+    console.log(parsedData)
      const {title,type,floor,beds,washrooms,description,status} = parsedData;
 
     const room = await prisma.room.update({
@@ -83,6 +85,8 @@ export const getRooms = async (
 ) => {
   try {
     const {
+      title,
+      beds,
       status,
       type,
       minPrice,
@@ -91,10 +95,38 @@ export const getRooms = async (
       limit = "10",
       sort = "createdAt_desc",
     } = req.query;
-
     const where: any = {};
-    if (status) where.status = status;
-    if (type) where.type = type;
+    // console.log(status,title,beds,type)
+  if (title) {
+  where.OR = [
+    {
+      title: {
+        contains: title as string,
+        mode: "insensitive",
+      },
+    },
+    {
+      floor: {
+        contains: title as string,
+        mode: "insensitive",
+      },
+    },
+  ];
+}
+
+if (type) {
+  where.type = type; // ENUM-safe
+}
+
+if (status) {
+  where.status = status; // ENUM-safe
+}
+
+if (beds) {
+  where.beds = Number(beds);
+}
+    
+    // if (type) where.type = type;
     if (minPrice || maxPrice) {
       where.price = {};
       if (minPrice) where.price.gte = Number(minPrice);
