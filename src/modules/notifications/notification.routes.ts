@@ -5,7 +5,7 @@ import authenticateUserWithRole from "../../middlewares/role.middleware";
 const router = Router();
 
 router.post("/",authenticateUserWithRole(["ADMIN"]),createNotification);
-router.get("/",authenticateUserWithRole(["ADMIN"]), getMyNotifications);
+router.get("/", getMyNotifications);
 router.patch("/:id/read", markAsRead);
 router.delete("/:id",authenticateUserWithRole(["ADMIN"]), deleteNotification);
 

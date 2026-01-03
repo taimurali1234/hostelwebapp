@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   BookingType,
   BookingSource,
+  BookingStatus,
 } from "@prisma/client";
 
 /**
@@ -80,6 +81,7 @@ export const updateBookingSchema = z
 
     seatsSelected: z.number().min(1).optional(),
     totalAmount: z.number().min(0).optional(),
+    status:z.nativeEnum(BookingStatus).optional(),
 
     source: z.nativeEnum(BookingSource).optional(),
   })

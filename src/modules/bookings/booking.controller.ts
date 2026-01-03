@@ -202,14 +202,14 @@ export const createBooking = async (
       });
 
       // 5️⃣ Update bookedSeats
-      await tx.room.update({
-        where: { id: roomId },
-        data: {
-          bookedSeats: {
-            increment: seatsSelected,
-          },
-        },
-      });
+      // await tx.room.update({
+      //   where: { id: roomId },
+      //   data: {
+      //     bookedSeats: {
+      //       increment: seatsSelected,
+      //     },
+      //   },
+      // });
 
       return newBooking;
     });
@@ -293,14 +293,58 @@ export const updateBooking = async (
     }
 
     const updatedBooking = await prisma.$transaction(async (tx) => {
-      let seatDiff = 0;
+      // 🪑 Seats management logic based on status change
+      
+      // Check if status is being changed
+      const statusChanging = parsedData.status !== undefined && parsedData.status !== booking.status;
+      const wasConfirmed = booking.status === "CONFIRMED";
+      const becomingConfirmed = parsedData.status === "CONFIRMED";
 
-      // 🪑 Seats update logic
-      if (
-        parsedData.seatsSelected !== undefined &&
-        parsedData.seatsSelected !== booking.seatsSelected
-      ) {
-        seatDiff = parsedData.seatsSelected - booking.seatsSelected;
+      // Case 1: Changing FROM CONFIRMED to something else (PENDING/CANCELLED) → Release seats
+      if (statusChanging && wasConfirmed && !becomingConfirmed) {
+        await tx.room.update({
+          where: { id: booking.roomId },
+          data: {
+            bookedSeats: {
+              decrement: booking.seatsSelected,
+            },
+          },
+        });
+      }
+
+      // Case 2: Changing TO CONFIRMED (from non-confirmed) → Book seats
+      if (statusChanging && !wasConfirmed && becomingConfirmed) {
+        const room = await tx.room.findUnique({
+          where: { id: booking.roomId },
+          select: {
+            beds: true,
+            bookedSeats: true,
+          },
+        });
+
+        if (!room) return { error: "ROOM_NOT_FOUND", status: 404 };
+
+        const availableSeats = room.beds - room.bookedSeats;
+        
+        // Check if enough seats available for confirmation
+        if (availableSeats < booking.seatsSelected) {
+          return { error: "INSUFFICIENT_SEATS", status: 400 };
+        }
+
+        // Book the seats
+        await tx.room.update({
+          where: { id: booking.roomId },
+          data: {
+            bookedSeats: {
+              increment: booking.seatsSelected,
+            },
+          },
+        });
+      }
+
+      // Case 3: Still CONFIRMED but seats are changing → Adjust seat difference
+      if (!statusChanging && becomingConfirmed && parsedData.seatsSelected !== undefined && parsedData.seatsSelected !== booking.seatsSelected) {
+        const seatDiff = parsedData.seatsSelected - booking.seatsSelected;
 
         const room = await tx.room.findUnique({
           where: { id: booking.roomId },
@@ -310,18 +354,16 @@ export const updateBooking = async (
           },
         });
 
-          if (!room) return { error: "ROOM_NOT_FOUND", status: 404 };
-
+        if (!room) return { error: "ROOM_NOT_FOUND", status: 404 };
 
         const availableSeats = room.beds - room.bookedSeats;
-        // if (availableSeats === 0) return { error: "ROOM_FULL", status: 400 };
 
         // If increasing seats → check availability
         if (seatDiff > 0 && availableSeats < seatDiff) {
           return { error: "INSUFFICIENT_SEATS", status: 400 };
         }
 
-        // Update room seats
+        // Update room seats with the difference
         await tx.room.update({
           where: { id: booking.roomId },
           data: {
@@ -380,16 +422,70 @@ export const getSingleBooking = async (req: Request, res: Response) => {
   return res.json(booking);
 };
 
-export const getAllBookings = async (_req: Request, res: Response) => {
-  const bookings = await prisma.booking.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      room: true,
-      user: true,
-    },
-  });
+export const getAllBookings = async (req: Request, res: Response) => {
+  try {
+    // Extract filters from query params
+    const { search, status, bookingType, source } = req.query;
 
-  return res.json(bookings);
+    // Build where conditions dynamically
+    const where: any = {};
+
+    // Filter by status
+    if (status && status !== "") {
+      where.status = status;
+    }
+
+    // Filter by booking type
+    if (bookingType && bookingType !== "") {
+      where.bookingType = bookingType;
+    }
+
+    // Filter by source
+    if (source && source !== "") {
+      where.source = source;
+    }
+
+    // Filter by search (user name or room name or booking ID)
+    if (search && search !== "") {
+      where.OR = [
+        {
+          user: {
+            OR: [
+              { firstName: { contains: search as string, mode: "insensitive" } },
+              { lastName: { contains: search as string, mode: "insensitive" } },
+              { email: { contains: search as string, mode: "insensitive" } },
+            ],
+          },
+        },
+        {
+          room: {
+            OR: [
+              { title: { contains: search as string, mode: "insensitive" } },
+              { name: { contains: search as string, mode: "insensitive" } },
+            ],
+          },
+        },
+        {
+          id: { contains: search as string, mode: "insensitive" },
+        },
+      ];
+    }
+
+    // Fetch bookings with applied filters
+    const bookings = await prisma.booking.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: {
+        room: true,
+        user: true,
+      },
+    });
+
+    return res.json(bookings);
+  } catch (error) {
+    console.error("Error fetching bookings:", error);
+    return res.status(500).json({ message: "Failed to fetch bookings" });
+  }
 };
 
 export const deleteBooking = async (req: Request, res: Response, next: NextFunction) => {

@@ -15,7 +15,7 @@ router.post("/",authenticateUserWithRole(["USER","ADMIN"]), createBooking);
 router.post("/preview", previewBooking);
 router.get("/", getAllBookings);
 router.get("/:id", getSingleBooking);
-router.patch("/:id",authenticateUserWithRole(["USER","ADMIN"]), updateBooking);
+router.patch("/:id", updateBooking);
 router.delete("/:id", deleteBooking);
 
 export default router;

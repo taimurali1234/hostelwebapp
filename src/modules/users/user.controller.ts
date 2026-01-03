@@ -25,6 +25,7 @@ export const registerUser = async (
 ): Promise<Response | void> => {
   try {
     const parsedData: RegisterUserDTO = RegisterUserSchema.parse(req.body);
+    console.log(parsedData)
     const { name, email, password, phone,address } = parsedData;
 
         let role: Role = "USER";
@@ -79,34 +80,52 @@ export const registerUser = async (
       maxAge: 24 * 60 * 60 * 1000,
     });
     if(user.role !== "ADMIN"){
-      const emailToken = crypto.randomBytes(32).toString("hex");
+      try {
+        const emailToken = crypto.randomBytes(32).toString("hex");
 
-    // Save token in Redis (1 hour)
-    await redis.setex(`verify:${email}`, 3600, emailToken);
+        // Save token in Redis (1 hour)
+        await redis.setex(`verify:${email}`, 3600, emailToken);
 
-    const verificationLink = `${req.protocol}://${req.get(
-      "host"
-    )}/api/users/verifyEmail?token=${emailToken}&email=${email}`;
+        const verificationLink = `${req.protocol}://${req.get(
+          "host"
+        )}/api/users/verifyEmail?token=${emailToken}&email=${email}`;
 
+        await sendEmail(
+          email,
+          "Verify your email",
+          `<p>Click below to verify your email:</p>
+           <a href="${verificationLink}">Verify Email</a>`
+        );
 
-    await sendEmail(
-      email,
-      "Verify your email",
-      `<p>Click below to verify your email:</p>
-       <a href="${verificationLink}">Verify Email</a>`
-    );
-    
-
-    return res.json({
-      message: "Verification email sent. Please check your inbox.",
-    });
-
+        return res.status(201).json({
+          message: "Registration successful! Please check your email to verify your account.",
+          userId: user.id,
+          email: user.email,
+        });
+      } catch (emailError) {
+        console.error("Email sending failed:", emailError);
+        // Still return success even if email fails, user can resend
+        return res.status(201).json({
+          message: "Registration successful! Email verification link could not be sent. Please use resend email option.",
+          userId: user.id,
+          email: user.email,
+        });
+      }
     }
     
-    return res.json({message:"You are successfully registered as an Admin"})
+    return res.status(201).json({
+      message: "Admin registered successfully",
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
     
   } catch (error) {
-    next(error)
+    console.error("Registration error:", error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ message: "Registration failed" });
   }
 };
 
@@ -124,7 +143,7 @@ email:string;
 const storedToken =await redis.get(`verify:${email}`);
 
 if (!storedToken || storedToken !== token) {
-return res.status(400).send({message:"Invalid or expired verification link",email});
+return res.status(400).json({message:"Invalid or expired verification link",email});
     }
 
 await prisma.user.update({
@@ -146,10 +165,15 @@ await publishToQueue('AUTH_NOTIFICATION.USER_CREATED', {
             })
 }
 
-return res.send("✅ Email verified successfully. You can now log in.");
+// Redirect to login page with success query param
+return res.redirect(`http://localhost:5173/login?verified=true`);
 
   }catch (error) {
-  next(error)
+    console.error("Email verification error:", error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({message:"Email verification failed"});
   }
 };
 export const resendVerifyEmail =async (
@@ -183,7 +207,11 @@ email:string;
       message: "We have sent the verification email again. Please check your inbox.",
     });
   }catch (error) {
- next(error)
+    console.error("Resend verification error:", error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ message: "Failed to resend verification email" });
   }
 };
 
@@ -196,6 +224,7 @@ export const loginUser = async (
   try {
 
     const loginParsedData:LoginDTO = LoginSchema.parse(req.body)
+    console.log(loginParsedData)
     const {email,password} = loginParsedData;
     const user = await prisma.user.findUnique({
       where:{email},
@@ -211,7 +240,7 @@ return res
     }
 const isMatch =await bcrypt.compare(password, user.password);
 if (!isMatch) {
-return res.status(400).json({message:"Invalid credentials" });
+return res.status(400).json({message:"Invalid credentials, Wrong Password" });
     }
     // Generate JWT Token
     if (!process.env.JWT_SECRET) {
@@ -233,15 +262,16 @@ return res.status(400).json({message:"Invalid credentials" });
       sameSite:"lax",
       maxAge: 24 * 60 * 60 * 1000,
     });
-  return res.json({message:"You are now logged-in",data:{userId:user.id,name:user.name,email:user.email,address:user.address}})
+  return res.json({message:"You are now logged-in",data:{userId:user.id,name:user.name,email:user.email,address:user.address,role:user.role}})
 
     
   } catch (error) {
-    next(error)
-
+    console.error("Login error:", error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ message: "Login failed" });
   }
-
-
 }
 
 export const getAllUsers = async (
@@ -324,7 +354,11 @@ export const getAllUsers = async (
       limit: pageSize,
     });
   } catch (error) {
-    next(error);
+    console.error("Get all users error:", error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ message: "Failed to fetch users" });
   }
 };
 
@@ -358,8 +392,11 @@ export const getSingleUser = async (
    
     return res.json(user);
   } catch (error) {
-    console.error(error);
-    next(error)
+    console.error("Get single user error:", error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ message: "Failed to fetch user" });
   }
 };
 
@@ -412,7 +449,11 @@ export const updateUser = async (
       updatedUser,
     });
   } catch (error) {
-    next(error);
+    console.error("Update user error:", error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ message: "Failed to update user" });
   }
 };
 
@@ -429,10 +470,181 @@ export const deleteUser = async (
     });
 
     return res.status(200).json({ message: "User deleted successfully" });
-  }
-  catch(error){
-   next(error)
+  } catch (error) {
+    console.error("Delete user error:", error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ message: "Failed to delete user" });
   }
 }
 
+/**
+ * ✅ Forgot Password - Send reset link to email
+ */
+export const forgotPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    // Check if user exists
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      // Don't reveal if email exists or not for security
+      return res.status(200).json({
+        message: "If the email exists, a password reset link has been sent.",
+      });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+
+    // Save token to Redis with 1 hour expiry
+    await redis.setex(`reset:${email}`, 3600, resetToken);
+
+    // Build reset link
+    const resetLink = `${req.protocol}://${req.get(
+      "host"
+    )}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
+
+    // Send email with reset link
+    try {
+      await sendEmail(
+        email,
+        "Reset Your Password",
+        `<p>Click the link below to reset your password:</p>
+         <a href="${resetLink}" style="display: inline-block; padding: 10px 20px; background-color: #3b82f6; color: white; text-decoration: none; border-radius: 5px;">Reset Password</a>
+         <p>This link will expire in 1 hour.</p>
+         <p>If you didn't request this, please ignore this email.</p>`
+      );
+    } catch (emailError) {
+      console.error("Failed to send reset email:", emailError);
+      return res.status(500).json({ message: "Failed to send reset email" });
+    }
+
+    return res.status(200).json({
+      message: "If the email exists, a password reset link has been sent.",
+    });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ message: "Failed to process forgot password" });
+  }
+};
+
+/**
+ * ✅ Verify Reset Token - Check if token is valid
+ */
+export const verifyResetToken = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const { token, email } = req.query as { token: string; email: string };
+
+    if (!token || !email) {
+      return res.status(400).json({ message: "Token and email are required" });
+    }
+
+    const storedToken = await redis.get(`reset:${email}`);
+
+    if (!storedToken || storedToken !== token) {
+      return res.status(400).json({
+        message: "Invalid or expired password reset link",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Token is valid",
+      valid: true,
+    });
+  } catch (error) {
+    console.error("Verify reset token error:", error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ message: "Failed to verify token" });
+  }
+};
+
+/**
+ * ✅ Reset Password - Update password with valid token
+ */
+export const resetPassword = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const { token, email, newPassword, confirmPassword } = req.body;
+
+    // Validate inputs
+    if (!token || !email || !newPassword || !confirmPassword) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ message: "Passwords do not match" });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters",
+      });
+    }
+
+    // Verify token
+    const storedToken = await redis.get(`reset:${email}`);
+
+    if (!storedToken || storedToken !== token) {
+      return res.status(400).json({
+        message: "Invalid or expired password reset link",
+      });
+    }
+
+    // Check if user exists
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password in database
+    await prisma.user.update({
+      where: { email },
+      data: { password: hashedPassword },
+    });
+
+    // Delete reset token from Redis
+    await redis.del(`reset:${email}`);
+
+    return res.status(200).json({
+      message: "Password has been reset successfully. Please login with your new password.",
+    });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    if (error instanceof Error) {
+      return res.status(400).json({ message: error.message });
+    }
+    return res.status(500).json({ message: "Failed to reset password" });
+  }
+};
 

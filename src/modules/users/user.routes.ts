@@ -1,5 +1,5 @@
 import express from "express"
-import { deleteUser, getAllUsers, getSingleUser, loginUser, registerUser, resendVerifyEmail, updateUser, verifyEmail } from "./user.controller"
+import { deleteUser, forgotPassword, getAllUsers, getSingleUser, loginUser, registerUser, resetPassword, resendVerifyEmail, updateUser, verifyEmail, verifyResetToken } from "./user.controller"
 import authenticateUser from "../../middlewares/auth.middleware"
 import authenticateUserWithRole from "../../middlewares/role.middleware"
 const router = express.Router()
@@ -7,7 +7,10 @@ const router = express.Router()
 router.post("/register",registerUser)
 router.post("/login",loginUser)
 router.post("/resendEmail",resendVerifyEmail)
+router.post("/forgotPassword",forgotPassword)
+router.post("/resetPassword",resetPassword)
 router.get("/verifyEmail",verifyEmail)
+router.get("/verifyResetToken",verifyResetToken)
 router.get("/",getAllUsers)
 router.get("/:id",getSingleUser)
 router.patch("/:id",updateUser)

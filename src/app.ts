@@ -10,6 +10,8 @@ import bookingRoutes from "./modules/bookings/booking.routes"
 import reviewsRoutes from "./modules/reviews/review.routes"
 import notificationRoutes from "./modules/notifications/notification.routes"
 import dasdboardRoutes from "./modules/Dashboard/dashbaord.routes"
+import paymentRoutes from "./modules/payments/payment.routes"
+import aiRoutes from "./modules/ai/ai.routes"
 import { errorHandler } from "./middlewares/error.middleware";
 
 const app = express();
@@ -38,7 +40,10 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/reviews", reviewsRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/dashboard", dasdboardRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/ai", aiRoutes);
 
 
 app.use(errorHandler);
 export default app;
+

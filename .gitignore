@@ -5,3 +5,5 @@ dev.db
 /.vscode/
 /.idea/
 coverage/
+*.md
+
