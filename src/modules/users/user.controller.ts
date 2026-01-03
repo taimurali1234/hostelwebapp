@@ -25,7 +25,6 @@ export const registerUser = async (
 ): Promise<Response | void> => {
   try {
     const parsedData: RegisterUserDTO = RegisterUserSchema.parse(req.body);
-    console.log(parsedData)
     const { name, email, password, phone,address } = parsedData;
 
         let role: Role = "USER";
@@ -224,7 +223,6 @@ export const loginUser = async (
   try {
 
     const loginParsedData:LoginDTO = LoginSchema.parse(req.body)
-    console.log(loginParsedData)
     const {email,password} = loginParsedData;
     const user = await prisma.user.findUnique({
       where:{email},
@@ -256,12 +254,14 @@ return res.status(400).json({message:"Invalid credentials, Wrong Password" });
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
+    console.log("✅ Token generated:", token.substring(0, 20) + "...");
     res.cookie("token", token, {
       httpOnly: true,
-      secure: true,
-      sameSite:"lax",
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
       maxAge: 24 * 60 * 60 * 1000,
     });
+    console.log("✅ Cookie set successfully");
   return res.json({message:"You are now logged-in",data:{userId:user.id,name:user.name,email:user.email,address:user.address,role:user.role}})
 
     
@@ -409,7 +409,7 @@ export const updateUser = async (
     const { id } = req.params;
 
     const parsedData: updateDTO = updateSchema.parse(req.body);
-    console.log(parsedData)
+
     const { name, phone, address, role, isVerified } = parsedData;
 
     // 🔐 Authorization
@@ -512,10 +512,9 @@ export const forgotPassword = async (
     // Save token to Redis with 1 hour expiry
     await redis.setex(`reset:${email}`, 3600, resetToken);
 
-    // Build reset link
-    const resetLink = `${req.protocol}://${req.get(
-      "host"
-    )}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
+    // Build reset link pointing to frontend
+    const frontendURL = process.env.FRONTEND_URL || "http://localhost:5173";
+    const resetLink = `${frontendURL}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
 
     // Send email with reset link
     try {

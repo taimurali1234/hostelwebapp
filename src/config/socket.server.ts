@@ -56,8 +56,6 @@ export const initSocketServer = (httpServer: http.Server) => {
   io.on("connection", (socket: AuthenticatedSocket) => {
     const { userId, role } = socket.user!;
 
-    console.log("🔌 Socket connected:", userId);
-
     /* =========================
        🏠 PERSONAL ROOM
        ========================= */
@@ -73,19 +71,16 @@ export const initSocketServer = (httpServer: http.Server) => {
        ========================= */
     if (role === "ADMIN") {
       socket.join("admins");
-      console.log("🛡 Admin joined admins room:", userId);
     }
 
     /* =========================
        📦 OPTIONAL: SEND MISSED NOTIFICATIONS
        ========================= */
     socket.on("userConnected", () => {
-      console.log("User connected event:", userId);
       // yahan DB se unread notifications emit kar sakte ho
     });
 
     socket.on("disconnect", () => {
-      console.log("❌ Socket disconnected:", userId);
     });
   });
 };

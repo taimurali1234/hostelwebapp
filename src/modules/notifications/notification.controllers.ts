@@ -16,17 +16,67 @@ export const getMyNotifications = async (req: Request, res: Response, next: Next
       return res.status(401).json({ message: "You are not authenticated yet" });
     }
 
-    const notifications = await prisma.notification.findMany({
-      where: {
+    // Get query parameters for filtering and pagination
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const search = (req.query.search as string) || "";
+    const audience = (req.query.audience as string) || "";
+    const severity = (req.query.severity as string) || "";
+    const read = (req.query.read as string) || "";
+
+    // Build where clause
+    const where: any = {
+      OR: [
+        { audience: "ALL_USERS" },
+        { audience: "USER", userId },
+      ],
+    };
+
+    // Add search filter
+    if (search) {
+      where.OR.push({
         OR: [
-          { audience: "ALL_USERS" },
-          { audience: "USER", userId },
+          { title: { contains: search, mode: "insensitive" } },
+          { message: { contains: search, mode: "insensitive" } },
         ],
-      },
+      });
+    }
+
+    // Add audience filter
+    if (audience && audience !== "") {
+      where.audience = audience;
+    }
+
+    // Add severity filter
+    if (severity && severity !== "") {
+      where.severity = severity;
+    }
+
+    // Add read filter
+    if (read === "true") {
+      where.isRead = true;
+    } else if (read === "false") {
+      where.isRead = false;
+    }
+
+    // Get total count
+    const total = await prisma.notification.count({ where });
+
+    // Get paginated notifications
+    const notifications = await prisma.notification.findMany({
+      where,
       orderBy: { createdAt: "desc" },
+      skip,
+      take: limit,
     });
 
-    return res.json(notifications);
+    return res.json({
+      notifications,
+      total,
+      page,
+      limit,
+    });
   } catch (error) {
     console.error("Get my notifications error:", error);
     if (error instanceof Error) {
@@ -66,7 +116,6 @@ export const markAsRead = async (req: Request, res: Response, next: NextFunction
 export const createNotification = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsedData = createNotificationSchema.safeParse(req.body);
-    console.log(parsedData);
 
     if (!parsedData.success) {
       // 🔥 Return proper errors
