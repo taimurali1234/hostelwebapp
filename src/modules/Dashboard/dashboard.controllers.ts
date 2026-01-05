@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import prisma from "../../config/prismaClient";
 import { BookingStatus, RoomStatus } from "@prisma/client";
+import { sendOK, sendError } from "../../utils/response";
 
 export const getDashboardData = async (
   req: Request,
@@ -104,7 +105,7 @@ const bookingOverview = Object.entries(monthlyMap)
 
     /* ---------------- FINAL RESPONSE ---------------- */
 
-    return res.json({
+    return sendOK(res, "Dashboard data loaded successfully", {
       topCards: {
         todayBookedRooms,
         pendingRooms,
@@ -125,8 +126,6 @@ const bookingOverview = Object.entries(monthlyMap)
     });
   } catch (error) {
     console.error("Dashboard Error:", error);
-    return res
-      .status(500)
-      .json({ message: "Failed to load dashboard" });
+    return sendError(res, 500, "Failed to load dashboard");
   }
 };

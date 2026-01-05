@@ -14,6 +14,7 @@ import prisma from "../../config/prismaClient";
 import { BookingType, BookingStatus } from "@prisma/client";
 import PaymentService from "../payments/payment.service";
 import { z } from "zod";
+import { sendUnauthorized, sendNotFound, sendForbidden, sendBadRequest, sendCreated, sendOK, sendError } from "../../utils/response";
 
 /**
  * OPTION 1: Create Booking with Immediate Payment Initiation
@@ -30,7 +31,7 @@ export const createBookingWithPayment = async (
     const userId = req.user?.userId;
 
     if (!userId) {
-      return res.status(401).json({ message: "You are not authenticated" });
+      return sendUnauthorized(res, "You are not authenticated");
     }
 
     // Validate the request
@@ -106,7 +107,7 @@ export const createBookingWithPayment = async (
     });
 
     if ("error" in booking) {
-      return res.status(booking.status).json({ message: booking.error });
+      return sendError(res, booking.status, booking.error);
     }
 
     // 4. Initiate payment (outside transaction for better error handling)
@@ -126,14 +127,10 @@ export const createBookingWithPayment = async (
         data: { bookedSeats: { decrement: booking.seatsSelected } },
       });
 
-      return res.status(400).json({
-        message: paymentResponse.message,
-        paymentStatus: paymentResponse.paymentStatus,
-      });
+      return sendBadRequest(res, paymentResponse.message);
     }
 
-    return res.status(201).json({
-      message: "Booking created. Payment initiated.",
+    return sendCreated(res, "Booking created. Payment initiated.", {
       booking,
       payment: {
         transactionId: paymentResponse.transactionId,
@@ -195,12 +192,12 @@ export const getBookingWithPaymentDetails = async (
     });
 
     if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
+      return sendNotFound(res, "Booking not found");
     }
 
     // Check authorization (user can only see their own booking, admin can see all)
     if (userId !== booking.userId && req.user?.role !== "ADMIN") {
-      return res.status(403).json({ message: "Not your booking" });
+      return sendForbidden(res, "Not your booking");
     }
 
     // Add computed fields
@@ -219,7 +216,7 @@ export const getBookingWithPaymentDetails = async (
       },
     };
 
-    return res.json(response);
+    return sendOK(res, "Booking with payment details fetched successfully", response);
   } catch (error) {
     next(error);
   }
@@ -246,16 +243,16 @@ export const cancelBookingWithRefund = async (
     });
 
     if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
+      return sendNotFound(res, "Booking not found");
     }
 
     // Authorization check
     if (userId !== booking.userId && req.user?.role !== "ADMIN") {
-      return res.status(403).json({ message: "Not your booking" });
+      return sendForbidden(res, "Not your booking");
     }
 
     if (booking.status === "CANCELLED") {
-      return res.status(400).json({ message: "Booking is already cancelled" });
+      return sendBadRequest(res, "Booking is already cancelled");
     }
 
     const result = await prisma.$transaction(async (tx) => {

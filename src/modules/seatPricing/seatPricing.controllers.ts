@@ -9,6 +9,7 @@ import {
 } from "./seatPricingDTOS/seatPricing.dtos";
 import prisma from "../../config/prismaClient";
 import { tr } from "zod/v4/locales";
+import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError } from "../../utils/response";
 
 export const createSeatPricing = async (req: Request, res: Response,next:NextFunction): Promise<Response | void> => {
   try {
@@ -31,10 +32,10 @@ export const createSeatPricing = async (req: Request, res: Response,next:NextFun
       },
     });
 
-    res.status(201).json({ message: "Seat pricing created", seatPricing });
+    sendCreated(res, "Seat pricing created", seatPricing);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Something went wrong", error });
+    sendInternalServerError(res, "Something went wrong");
   }
 };
 
@@ -44,7 +45,7 @@ export const getAllSeatPricing = async (_req: Request, res: Response,next:NextFu
     const seatPricings = await prisma.seatPricing.findMany({
       orderBy: { createdAt: "desc" },
     });
-    res.status(200).json(seatPricings);
+    sendOK(res, "Seat pricings fetched successfully", seatPricings);
   } catch (error) {
     next(error)
   }
@@ -57,8 +58,8 @@ export const getSeatPricingById = async (req: Request, res: Response,next:NextFu
     const seatPricing = await prisma.seatPricing.findUnique({
       where: { id },
     });
-    if (!seatPricing) return res.status(404).json({ message: "Seat pricing not found" });
-    res.status(200).json(seatPricing);
+    if (!seatPricing) return sendNotFound(res, "Seat pricing not found");
+    sendOK(res, "Seat pricing fetched successfully", seatPricing);
   } catch (error) {
     next(error)
   }
@@ -104,7 +105,7 @@ const { price, isActive,stayType } = parsedData;
     },
   });
 });
-    res.status(200).json({ message: "Seat pricing updated", updatedSeatPricing });
+    sendOK(res, "Seat pricing updated", updatedSeatPricing);
   } catch (error) {
     next(error)
   }
@@ -115,7 +116,7 @@ export const deleteSeatPricing = async (req: Request, res: Response,next:NextFun
   try {
     const { id } = req.params;
     await prisma.seatPricing.delete({ where: { id } });
-    res.status(200).json({ message: "Seat pricing deleted" });
+    sendOK(res, "Seat pricing deleted");
   } catch (error) {
     next(error)
   }

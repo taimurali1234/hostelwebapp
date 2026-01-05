@@ -1,6 +1,7 @@
 import { deleteFromS3, uploadToS3 } from "../../utils/uploadToS3";
 import { Request, Response, NextFunction } from "express";
 import prisma from "../../config/prismaClient";
+import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError } from "../../utils/response";
 
 export const uploadVideo = async (
   req: Request,
@@ -12,15 +13,13 @@ export const uploadVideo = async (
     const file = req.file;
     console.log(roomId, file);
     if (!file)
-      return res.status(400).json({ message: "No Video file uploaded" });
+      return sendBadRequest(res, "No Video file uploaded");
     const existingVideosCount = await prisma.roomVideo.count({
       where: { roomId },
     });
 
     if (existingVideosCount >= 5) {
-      return res.status(400).json({
-        message: `You can upload maximum 1 video per room. Already uploaded: ${existingVideosCount}. Delete existing video to upload again`,
-      });
+      return sendBadRequest(res, `You can upload maximum 1 video per room. Already uploaded: ${existingVideosCount}. Delete existing video to upload again`);
     }
 
     const url = await uploadToS3(file);
@@ -29,7 +28,7 @@ export const uploadVideo = async (
       data: { url, roomId },
     });
 
-    res.status(201).json({ message: "Video successfully uploaded", video });
+    sendCreated(res, "Video successfully uploaded", video);
   } catch (error) {
     next(error);
   }
@@ -49,7 +48,7 @@ export const deleteRoomVideo = async (
     });
 
     if (!video) {
-      return res.status(404).json({ message: "Video not found" });
+      return sendNotFound(res, "Video not found");
     }
 
     // 2️⃣ Extract S3 Key from URL
@@ -67,12 +66,10 @@ export const deleteRoomVideo = async (
     // 4️⃣ Delete from DB
     const deletedVideo = await prisma.roomVideo.delete({ where: { id } });
 
-    res
-      .status(200)
-      .json({ message: "Video deleted successfully", deletedVideo });
+    sendOK(res, "Video deleted successfully", deletedVideo);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Internal server error", err });
+    sendInternalServerError(res, "Internal server error");
   }
 };
 export const getRoomVideos = async (
@@ -84,7 +81,7 @@ export const getRoomVideos = async (
     const { roomId } = req.params;
 
     if (!roomId) {
-      return res.status(400).json({ message: "roomId is required" });
+      return sendBadRequest(res, "roomId is required");
     }
 
     const images = await prisma.roomImage.findMany({
@@ -92,7 +89,7 @@ export const getRoomVideos = async (
       select: { id: true, url: true }, // only return necessary fields
     });
 
-    return res.status(200).json({ images });
+    return sendOK(res, "Videos fetched successfully", { images });
   } catch (error) {
     next(error);
   }

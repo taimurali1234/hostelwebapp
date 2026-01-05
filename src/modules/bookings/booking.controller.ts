@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import  prisma  from "../../config/prismaClient";
 import { BookingType, BookingStatus } from "@prisma/client";
 import { createBookingDTO, createBookingSchema, previewBookingDTO, previewBookingSchema, updateBookingDTO, updateBookingSchema } from "./bookingDTOS/booking.dtos";
+import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError, sendUnauthorized, sendForbidden } from "../../utils/response";
 
 
 
@@ -24,15 +25,11 @@ export const previewBooking = async (req: Request, res: Response,next:NextFuncti
 
   // 🔐 Basic validation
   if (!roomId || !bookingType) {
-    return res.status(400).json({
-      message: "roomId and bookingType are required",
-    });
+    return sendBadRequest(res, "roomId and bookingType are required");
   }
 
   if (seatsSelected <= 0) {
-    return res.status(400).json({
-      message: "Seats selected must be greater than 0",
-    });
+    return sendBadRequest(res, "Seats selected must be greater than 0");
   }
 
   // 🏠 Fetch room
@@ -47,30 +44,22 @@ export const previewBooking = async (req: Request, res: Response,next:NextFuncti
       });
 
       if (!room) {
-        return res.status(404).json(
-          `Room not found`
-        );
+        return sendNotFound(res, "Room not found");
       }
 
       if (room.status !== "AVAILABLE") {
-        return res.status(500).json(
-          `Room is not available`
-        );
+        return sendError(res, 500, "Room is not available");
       }
 
       // 3️⃣ Calculate available seats
       const availableSeats = room.beds - room.bookedSeats;
       console.log(availableSeats)
       if(availableSeats == 0){
-        return res.status(500).json(
-          `This room is already fully booked with all seats`
-        );
+        return sendError(res, 500, "This room is already fully booked with all seats");
       }
 
       if (availableSeats < seatsSelected) {
-        return res.status(500).json(
-          `Only ${availableSeats} seat(s) available in this room`
-        );
+        return sendError(res, 500, `Only ${availableSeats} seat(s) available in this room`);
       }
   let baseAmount = 0
 
@@ -118,7 +107,7 @@ export const previewBooking = async (req: Request, res: Response,next:NextFuncti
   }
 
   // 📤 Response (AUTO-FILL data)
-  return res.json({
+  return sendOK(res, "Booking preview calculated", {
     baseAmount,
     tax,
     taxPercent,
@@ -145,7 +134,7 @@ export const createBooking = async (
     const userId = req.user?.userId;
 
     if (!userId) {
-      return res.status(401).json({ message: "You are not authenticated" });
+      return sendUnauthorized(res, "You are not authenticated");
     }
 
     // 1️⃣ Validate request body
@@ -214,13 +203,10 @@ export const createBooking = async (
       return newBooking;
     });
     if ("error" in booking) {
-  return res.status(booking.status).json({ message: booking.error });
+  return sendError(res, booking.status, booking.error);
 }
 
-    return res.status(201).json({
-      message: "Booking successfully created",
-      booking,
-    });
+    return sendCreated(res, "Booking successfully created", booking);
   } catch (error) {
     next(error);
   }
@@ -241,19 +227,17 @@ export const updateBooking = async (
     });
 
     if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
+      return sendNotFound(res, "Booking not found");
     }
 
     // 🧍 USER restrictions
     if (user && user.role === "USER") {
       if (booking.userId !== user.userId) {
-        return res.status(403).json({ message: "Not your booking" });
+        return sendForbidden(res, "Not your booking");
       }
 
       if (!["PENDING", "RESERVED"].includes(booking.status)) {
-        return res.status(400).json({
-          message: "Booking cannot be updated after confirmation",
-        });
+        return sendBadRequest(res, "Booking cannot be updated after confirmation");
       }
 
       if (
@@ -263,9 +247,7 @@ export const updateBooking = async (
         req.body.totalAmount !== undefined ||
         req.body.status !== undefined
       ) {
-        return res.status(403).json({
-          message: "You are not allowed to update pricing or status",
-        });
+        return sendForbidden(res, "You are not allowed to update pricing or status");
       }
     }
 
@@ -278,18 +260,14 @@ export const updateBooking = async (
       parsedData.bookingType === BookingType.SHORT_TERM &&
       !parsedData.checkOut
     ) {
-      return res.status(400).json({
-        message: "Checkout required for short term booking",
-      });
+      return sendBadRequest(res, "Checkout required for short term booking");
     }
 
     if (
       parsedData.bookingType === BookingType.LONG_TERM &&
       parsedData.checkOut
     ) {
-      return res.status(400).json({
-        message: "Checkout not allowed for long term booking",
-      });
+      return sendBadRequest(res, "Checkout not allowed for long term booking");
     }
 
     const updatedBooking = await prisma.$transaction(async (tx) => {
@@ -390,13 +368,10 @@ export const updateBooking = async (
       });
     });
      if ("error" in updatedBooking) {
-  return res.status(updatedBooking.status).json({ message: updatedBooking.error });
+  return sendError(res, updatedBooking.status, updatedBooking.error);
 }
 
-    return res.status(200).json({
-      message: "Booking updated successfully",
-      booking: updatedBooking,
-    });
+    return sendOK(res, "Booking updated successfully", updatedBooking);
   } catch (error) {
     next(error);
   }
@@ -416,10 +391,10 @@ export const getSingleBooking = async (req: Request, res: Response) => {
   });
 
   if (!booking) {
-    return res.status(404).json({ message: "Booking not found" });
+    return sendNotFound(res, "Booking not found");
   }
 
-  return res.json(booking);
+  return sendOK(res, "Booking fetched successfully", booking);
 };
 
 export const getAllBookings = async (req: Request, res: Response) => {
@@ -481,10 +456,10 @@ export const getAllBookings = async (req: Request, res: Response) => {
       },
     });
 
-    return res.json(bookings);
+    return sendOK(res, "Bookings fetched successfully", bookings);
   } catch (error) {
     console.error("Error fetching bookings:", error);
-    return res.status(500).json({ message: "Failed to fetch bookings" });
+    return sendInternalServerError(res, "Failed to fetch bookings");
   }
 };
 
@@ -498,19 +473,17 @@ export const deleteBooking = async (req: Request, res: Response, next: NextFunct
     });
 
     if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
+      return sendNotFound(res, "Booking not found");
     }
 
     // Optional: USER restriction
     if (user && user.role === "USER") {
       if (booking.userId !== user.userId) {
-        return res.status(403).json({ message: "Not your booking" });
+        return sendForbidden(res, "Not your booking");
       }
 
       if (!["PENDING", "RESERVED"].includes(booking.status)) {
-        return res.status(400).json({
-          message: "Confirmed booking cannot be deleted",
-        });
+        return sendBadRequest(res, "Confirmed booking cannot be deleted");
       }
     }
 
@@ -531,7 +504,7 @@ export const deleteBooking = async (req: Request, res: Response, next: NextFunct
       });
     });
 
-    return res.json({ message: "Booking deleted successfully" });
+    return sendOK(res, "Booking deleted successfully");
   } catch (error) {
     next(error);
   }

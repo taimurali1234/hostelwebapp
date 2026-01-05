@@ -5,6 +5,7 @@ import { EasyPaisaPaymentService } from "./easypaise.service";
 import { JazzCashPaymentService } from "./jazzcash.service";
 import prisma from "../../config/prismaClient";
 import { z } from "zod";
+import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError, sendForbidden } from "../../utils/response";
 
 // Validation schemas
 const initiatePaymentSchema = z.object({
@@ -39,11 +40,11 @@ export const initiatePayment = async (
     });
 
     if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
+      return sendNotFound(res, "Booking not found");
     }
 
     if (booking.userId !== userId && req.user?.role !== "ADMIN") {
-      return res.status(403).json({ message: "Not your booking" });
+      return sendForbidden(res, "Not your booking");
     }
 
     // Initiate payment
@@ -56,14 +57,10 @@ export const initiatePayment = async (
     });
 
     if (!paymentResponse.success) {
-      return res.status(400).json({
-        message: paymentResponse.message,
-        status: paymentResponse.paymentStatus,
-      });
+      return sendBadRequest(res, paymentResponse.message, { status: paymentResponse.paymentStatus });
     }
 
-    return res.json({
-      message: "Payment initiated successfully",
+    return sendOK(res, "Payment initiated successfully", {
       transactionId: paymentResponse.transactionId,
       paymentUrl: paymentResponse.paymentUrl,
       paymentStatus: paymentResponse.paymentStatus,
@@ -88,10 +85,10 @@ export const getPaymentDetails = async (
     const payment = await PaymentService.getPaymentDetails(bookingId);
 
     if (!payment) {
-      return res.status(404).json({ message: "Payment record not found" });
+      return sendNotFound(res, "Payment record not found");
     }
 
-    return res.json(payment);
+    return sendOK(res, "Payment details fetched successfully", payment);
   } catch (error) {
     next(error);
   }
@@ -115,7 +112,7 @@ export const verifyPayment = async (
     });
 
     if (!payment) {
-      return res.status(404).json({ message: "Payment record not found" });
+      return sendNotFound(res, "Payment record not found");
     }
 
     // Verify with payment provider
@@ -124,7 +121,7 @@ export const verifyPayment = async (
       payment.paymentMethod
     );
 
-    return res.json({
+    return sendOK(res, "Payment verified", {
       verified: verification.verified,
       status: verification.status,
       transactionId: payment.transactionId,
@@ -147,7 +144,7 @@ export const stripeWebhook = async (
     const event = req.body;
 
     if (!event || !event.type) {
-      return res.status(400).json({ message: "Invalid webhook payload" });
+      return sendBadRequest(res, "Invalid webhook payload");
     }
 
     switch (event.type) {
@@ -179,7 +176,7 @@ export const stripeWebhook = async (
         break;
     }
 
-    return res.json({ received: true });
+    return sendOK(res, "Webhook received", { received: true });
   } catch (error) {
     next(error);
   }
@@ -292,10 +289,10 @@ export const getPaymentStatus = async (
     });
 
     if (!payment) {
-      return res.status(404).json({ message: "Payment not found" });
+      return sendNotFound(res, "Payment not found");
     }
 
-    return res.json({
+    return sendOK(res, "Payment status fetched", {
       transactionId: payment.transactionId,
       bookingId: payment.bookingId,
       paymentMethod: payment.paymentMethod,

@@ -7,6 +7,7 @@ export const errorHandler = (err:unknown, req:Request, res:Response, next:NextFu
   // Zod
   if (err instanceof ZodError) {
   return res.status(400).json({
+    success: false,
     message: err.issues[0]?.message || "Validation failed",
     errors: err.flatten().fieldErrors,
   });
@@ -15,15 +16,22 @@ export const errorHandler = (err:unknown, req:Request, res:Response, next:NextFu
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     switch (err.code) {
       case "P2002":
-        return res.status(409).json({ message: "Duplicate entry" });
+        return res.status(409).json({ 
+          success: false,
+          message: "Duplicate entry" 
+        });
       case "P2025":
-        return res.status(404).json({ message: "Record not found" });
+        return res.status(404).json({ 
+          success: false,
+          message: "Record not found" 
+        });
     }
   }
 
   // Custom app errors
   // if (err instanceof AppError) {
   //   return res.status(err.statusCode).json({
+  //     success: false,
   //     message: err.message,
   //   });
   // }
@@ -31,6 +39,7 @@ if (err instanceof multer.MulterError) {
     // Too many files
     if (err.code === "LIMIT_UNEXPECTED_FILE") {
       return res.status(400).json({
+        success: false,
         message: "You can upload maximum 5 images only",
       });
     }
@@ -38,6 +47,7 @@ if (err instanceof multer.MulterError) {
     // File size limit
     if (err.code === "LIMIT_FILE_SIZE") {
       return res.status(400).json({
+        success: false,
         message: "Each image must be less than 5MB",
       });
     }
@@ -45,7 +55,8 @@ if (err instanceof multer.MulterError) {
 
   // Fallback
   return res.status(500).json({
-    message: "Internal server error",err,
+    success: false,
+    message: "Internal server error",
   });
 };
 

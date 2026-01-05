@@ -3,6 +3,7 @@ import prisma from "../../config/prismaClient";
 import { NotificationAudience } from "@prisma/client";
 import { io } from "../../config/socket.server";
 import { CreateNotificationDTO, createNotificationSchema } from "./notificationDTOS/notification.dtos";
+import { sendUnauthorized, sendBadRequest, sendError, sendOK, sendNotFound, sendCreated } from "../../utils/response";
 
 /**
  * ✅ USER: Get my notifications
@@ -13,7 +14,7 @@ export const getMyNotifications = async (req: Request, res: Response, next: Next
     const userId = req.user?.userId;
 
     if (!userId) {
-      return res.status(401).json({ message: "You are not authenticated yet" });
+      return sendUnauthorized(res, "You are not authenticated yet");
     }
 
     // Get query parameters for filtering and pagination
@@ -26,15 +27,17 @@ export const getMyNotifications = async (req: Request, res: Response, next: Next
     const read = (req.query.read as string) || "";
 
     // Build where clause
-    const where: any = {
-      OR: [
-        { audience: "ALL_USERS" },
-        { audience: "USER", userId },
-      ],
-    };
+    let where: any = {};
 
+    if (audience) {
+      where.audience = audience;
+    }
+    
     // Add search filter
     if (search) {
+      if (!where.OR) {
+        where.OR = [];
+      }
       where.OR.push({
         OR: [
           { title: { contains: search, mode: "insensitive" } },
@@ -43,11 +46,7 @@ export const getMyNotifications = async (req: Request, res: Response, next: Next
       });
     }
 
-    // Add audience filter
-    if (audience && audience !== "") {
-      where.audience = audience;
-    }
-
+   
     // Add severity filter
     if (severity && severity !== "") {
       where.severity = severity;
@@ -71,7 +70,7 @@ export const getMyNotifications = async (req: Request, res: Response, next: Next
       take: limit,
     });
 
-    return res.json({
+    return sendOK(res, "Notifications fetched successfully", {
       notifications,
       total,
       page,
@@ -80,9 +79,9 @@ export const getMyNotifications = async (req: Request, res: Response, next: Next
   } catch (error) {
     console.error("Get my notifications error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to fetch notifications" });
+    return sendError(res, 500, "Failed to fetch notifications");
   }
 };
 
@@ -98,13 +97,13 @@ export const markAsRead = async (req: Request, res: Response, next: NextFunction
       data: { isRead: true },
     });
 
-    return res.json({ message: "Notification marked as read", notification });
+    return sendOK(res, "Notification marked as read", notification);
   } catch (error) {
     console.error("Mark as read error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to mark notification as read" });
+    return sendError(res, 500, "Failed to mark notification as read");
   }
 };
 
@@ -119,25 +118,18 @@ export const createNotification = async (req: Request, res: Response, next: Next
 
     if (!parsedData.success) {
       // 🔥 Return proper errors
-      return res.status(400).json({
-        message: "Validation failed",
-        errors: parsedData.error.format(), // ← structured errors
-      });
+      return sendBadRequest(res, "Validation failed", parsedData.error.flatten().fieldErrors as Record<string, string[]>);
     }
     const { audience, userId, title, message, severity } = parsedData.data;
 
     // 🔒 Basic validation
     if (!audience || !message) {
-      return res.status(400).json({
-        message: "audience and message are required",
-      });
+      return sendBadRequest(res, "audience and message are required");
     }
 
     // 👤 USER → userId required
     if (audience === NotificationAudience.USER && !userId) {
-      return res.status(400).json({
-        message: "userId is required when audience is USER",
-      });
+      return sendBadRequest(res, "userId is required when audience is USER");
     }
 
     // 🚫 ADMIN / ALL_USERS → userId not allowed
@@ -145,9 +137,7 @@ export const createNotification = async (req: Request, res: Response, next: Next
       audience !== NotificationAudience.USER &&
       userId
     ) {
-      return res.status(400).json({
-        message: "userId is only allowed when audience is USER",
-      });
+      return sendBadRequest(res, "userId is only allowed when audience is USER");
     }
 
     // 🔎 Check user existence (only for USER audience)
@@ -158,9 +148,7 @@ export const createNotification = async (req: Request, res: Response, next: Next
       });
 
       if (!userExists) {
-        return res.status(404).json({
-          message: "User not found",
-        });
+        return sendNotFound(res, "User not found");
       }
     }
 
@@ -194,13 +182,13 @@ export const createNotification = async (req: Request, res: Response, next: Next
         break;
     }
 
-    return res.status(201).json({ message: "Notification created successfully", notification });
+    return sendCreated(res, "Notification created successfully", notification);
   } catch (error) {
     console.error("Create notification error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to create notification" });
+    return sendError(res, 500, "Failed to create notification");
   }
 };
 
@@ -215,13 +203,13 @@ export const getAllNotifications = async (_req: Request, res: Response, next: Ne
       orderBy: { createdAt: "desc" },
     });
 
-    return res.json(notifications);
+    return sendOK(res, "Notifications fetched successfully", notifications);
   } catch (error) {
     console.error("Get all notifications error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to fetch notifications" });
+    return sendError(res, 500, "Failed to fetch notifications");
   }
 };
 
@@ -234,7 +222,7 @@ export const updateNotification = async (req: Request, res: Response, next: Next
     const { title, message, severity } = req.body;
 
     if (!message) {
-      return res.status(400).json({ message: "Message is required" });
+      return sendBadRequest(res, "Message is required");
     }
 
     const notification = await prisma.notification.update({
@@ -242,13 +230,13 @@ export const updateNotification = async (req: Request, res: Response, next: Next
       data: { title, message, severity },
     });
 
-    return res.json({ message: "Notification updated successfully", notification });
+    return sendOK(res, "Notification updated successfully", notification);
   } catch (error) {
     console.error("Update notification error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to update notification" });
+    return sendError(res, 500, "Failed to update notification");
   }
 };
 
@@ -263,12 +251,12 @@ export const deleteNotification = async (req: Request, res: Response, next: Next
       where: { id },
     });
 
-    return res.json({ message: "Notification deleted successfully" });
+    return sendOK(res, "Notification deleted successfully");
   } catch (error) {
     console.error("Delete notification error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to delete notification" });
+    return sendError(res, 500, "Failed to delete notification");
   }
 };

@@ -6,6 +6,7 @@ import { Request, Response, NextFunction } from "express";
 import { aiService, ConversationResponse, WelcomeResponse } from "./ai.service";
 import { speechHandler } from "./speech.handler";
 import { z } from "zod";
+import { sendUnauthorized, sendOK } from "../../utils/response";
 
 // Validation schemas
 const messageSchema = z.object({
@@ -45,10 +46,7 @@ export const getWelcomeMessage = async (
 
     const welcomeResponse = await aiService.getWelcomeMessage(userId, includeAudio);
 
-    return res.json({
-      success: true,
-      data: welcomeResponse,
-    });
+    return sendOK(res, "Welcome message retrieved", welcomeResponse);
   } catch (error) {
     next(error);
   }
@@ -67,7 +65,7 @@ export const sendMessage = async (
   try {
     const userId = req.user?.userId;
     if (!userId) {
-      return res.status(401).json({ message: "Not authenticated" });
+      return sendUnauthorized(res, "Not authenticated");
     }
 
     const parsedData = messageSchema.parse(req.body);
@@ -89,10 +87,7 @@ export const sendMessage = async (
       { includeAudio }
     );
 
-    return res.json({
-      success: true,
-      data: response,
-    });
+    return sendOK(res, "Message processed successfully", response);
   } catch (error) {
     next(error);
   }
@@ -111,7 +106,7 @@ export const streamMessage = async (
   try {
     const userId = req.user?.userId;
     if (!userId) {
-      return res.status(401).json({ message: "Not authenticated" });
+      return sendUnauthorized(res, "Not authenticated");
     }
 
     const parsedData = messageSchema.parse(req.body);
@@ -192,10 +187,7 @@ export const getQuickResponse = async (
 
     const response = await aiService.getQuickResponse(query, includeAudio);
 
-    return res.json({
-      success: true,
-      data: response,
-    });
+    return sendOK(res, "Quick response retrieved", response);
   } catch (error) {
     next(error);
   }
@@ -213,15 +205,12 @@ export const getRecommendations = async (
   try {
     const userId = req.user?.userId;
     if (!userId) {
-      return res.status(401).json({ message: "Not authenticated" });
+      return sendUnauthorized(res, "Not authenticated");
     }
 
     const recommendations = await aiService.getPersonalizedRecommendations(userId);
 
-    return res.json({
-      success: true,
-      data: recommendations,
-    });
+    return sendOK(res, "Recommendations retrieved", recommendations);
   } catch (error) {
     next(error);
   }
@@ -239,14 +228,13 @@ export const getConversationHistory = async (
   try {
     const userId = req.user?.userId;
     if (!userId) {
-      return res.status(401).json({ message: "Not authenticated" });
+      return sendUnauthorized(res, "Not authenticated");
     }
 
     const { conversationId } = req.params;
 
     // In production, fetch from database
-    return res.json({
-      success: true,
+    return sendOK(res, "Conversation history retrieved", {
       conversationId,
       messages: [],
       note: "Fetch from AiAction table in database",
@@ -268,7 +256,7 @@ export const saveUserPreference = async (
   try {
     const userId = req.user?.userId;
     if (!userId) {
-      return res.status(401).json({ message: "Not authenticated" });
+      return sendUnauthorized(res, "Not authenticated");
     }
 
     const { preference, value } = req.body;
@@ -276,9 +264,7 @@ export const saveUserPreference = async (
     // Save preference data
     // This could be used to personalize future interactions
 
-    return res.json({
-      success: true,
-      message: "Preference saved",
+    return sendOK(res, "Preference saved successfully", {
       preference,
       value,
     });

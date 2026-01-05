@@ -1,6 +1,7 @@
 import {Request,Response, NextFunction } from "express";
 import prisma from "../../config/prismaClient";
 import { createReviewDTO, createReviewSchema, updateReviewDTO, updateReviewSchema } from "./reviewDTOS/reviews.dtos";
+import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError, sendForbidden } from "../../utils/response";
 
 export const createReview = async (req: Request, res: Response, next: NextFunction) => {
   console.log("api hit")
@@ -17,7 +18,7 @@ export const createReview = async (req: Request, res: Response, next: NextFuncti
 
     // Optional: check if room exists
     const room = await prisma.room.findUnique({ where: { id: roomId } });
-    if (!room) return res.status(404).json({ message: "Room not found" });
+    if (!room) return sendNotFound(res, "Room not found");
 
     const review = await prisma.review.create({
       data: {
@@ -28,7 +29,7 @@ export const createReview = async (req: Request, res: Response, next: NextFuncti
       },
     });
 
-    res.status(201).json({ message: "Review created successfully", review });
+    return sendCreated(res, "Review created successfully", review);
   } catch (error) {
     next(error);
   }
@@ -42,7 +43,7 @@ export const updateReview = async (req: Request, res: Response, next: NextFuncti
     const userId = req.user?.userId;
 
     const review = await prisma.review.findUnique({ where: { id } });
-    if (!review) return res.status(404).json({ message: "Review not found" });
+    if (!review) return sendNotFound(res, "Review not found");
 
     // Ownership check
     // if (review.userId !== userId) {
@@ -54,7 +55,7 @@ export const updateReview = async (req: Request, res: Response, next: NextFuncti
       data: parsedData,
     });
 
-    res.status(200).json({ message: "Review updated successfully", review: updatedReview });
+    return sendOK(res, "Review updated successfully", updatedReview);
   } catch (error) {
     next(error);
   }
@@ -67,14 +68,14 @@ export const deleteReview = async (req: Request, res: Response, next: NextFuncti
     const userId = req.user?.userId;
 
     const review = await prisma.review.findUnique({ where: { id } });
-    if (!review) return res.status(404).json({ message: "Review not found" });
+    if (!review) return sendNotFound(res, "Review not found");
 
     // if (review.userId !== userId) {
     //   return res.status(403).json({ message: "Not your review" });
     // }
 
     await prisma.review.delete({ where: { id } });
-    res.status(200).json({ message: "Review deleted successfully" });
+    return sendOK(res, "Review deleted successfully");
   } catch (error) {
     next(error);
   }
@@ -112,11 +113,11 @@ export const getReviewsForRoom = async (req: Request, res: Response, next: NextF
       take: takeNum,
     });
     if (!reviews || reviews.length === 0) {
-      return res.status(404).json({ message: "No reviews found" });
+      return sendNotFound(res, "No reviews found");
     }
 
 
-    res.status(200).json({ reviews });
+    sendOK(res, "Reviews fetched successfully", { reviews });
   } catch (error) {
     next(error);
   }
@@ -132,9 +133,9 @@ export const getReview = async (req: Request, res: Response, next: NextFunction)
       include: { user: true, room: true },
     });
 
-    if (!review) return res.status(404).json({ message: "Review not found" });
+    if (!review) return sendNotFound(res, "Review not found");
 
-    res.status(200).json({ review });
+    return sendOK(res, "Review fetched successfully", { review });
   } catch (error) {
     next(error);
   }
@@ -230,10 +231,14 @@ export const getAllReviews = async (
     ]);
 
     res.status(200).json({
-      reviews,
-      total,
-      page: pageNum,
-      limit: limitNum,
+      success: true,
+      message: "All reviews fetched successfully",
+      data: {
+        reviews,
+        total,
+        page: pageNum,
+        limit: limitNum,
+      },
     });
   } catch (error) {
     next(error);

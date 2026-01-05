@@ -5,6 +5,7 @@ import {
   updateTaxConfigSchema,
 } from "./taxconfigDTOS/taxconfig.dtos";
 import prisma from "../../../config/prismaClient";
+import { sendCreated, sendNotFound, sendOK } from "../../../utils/response";
 import { nextToken } from "aws-sdk/clients/iotfleetwise";
 import { networkInterfaces } from "os";
 
@@ -28,7 +29,7 @@ export const createTaxConfig = async (req: Request, res: Response,next:NextFunct
     },
   });
 
-  return res.status(201).json({message:"tax has beeen added successfully",taxConfig});
+  return sendCreated(res, "Tax config has been added successfully", taxConfig);
         
     } catch (error) {
         next(error)
@@ -46,11 +47,11 @@ export const getActiveTaxConfig = async (_req: Request, res: Response,next:NextF
     where: { isActive: true },
   });
 
-  if (!taxConfig) {
-    return res.status(404).json({ message: "No active tax found" });
+if (!taxConfig || taxConfig.length === 0) {
+    return sendNotFound(res, "No active tax found");
   }
 
-  return res.json(taxConfig);
+  return sendOK(res, "Active tax config fetched successfully", taxConfig);
         
     } catch (error) {
 next(error)
@@ -80,7 +81,7 @@ export const updateTaxConfig = async (req: Request, res: Response,next:NextFunct
     data: parsedData,
   });
 
-  return res.status(200).json({message:"tax has been updated successfully",updatedTaxConfig});
+  return sendOK(res, "Tax config has been updated successfully", updatedTaxConfig);
     } catch (error) {
         next(error)
         

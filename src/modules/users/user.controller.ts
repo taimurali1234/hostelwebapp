@@ -5,6 +5,7 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import redis from "../../config/redis";
 import sendEmail from "../../utils/sendEmailLink";
+import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError, sendForbidden } from "../../utils/response";
 import {
   RegisterUserSchema,
   RegisterUserDTO,
@@ -43,7 +44,7 @@ export const registerUser = async (
     });
 
     if (existingUser) {
-      return res.status(400).json({ message: "Email already registered" });
+      return sendBadRequest(res, "Email already registered");
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -96,35 +97,22 @@ export const registerUser = async (
            <a href="${verificationLink}">Verify Email</a>`
         );
 
-        return res.status(201).json({
-          message: "Registration successful! Please check your email to verify your account.",
-          userId: user.id,
-          email: user.email,
-        });
+        return sendCreated(res, "Registration successful! Please check your email to verify your account.", { userId: user.id, email: user.email });
       } catch (emailError) {
         console.error("Email sending failed:", emailError);
         // Still return success even if email fails, user can resend
-        return res.status(201).json({
-          message: "Registration successful! Email verification link could not be sent. Please use resend email option.",
-          userId: user.id,
-          email: user.email,
-        });
+        return sendCreated(res, "Registration successful! Email verification link could not be sent. Please use resend email option.", { userId: user.id, email: user.email });
       }
     }
     
-    return res.status(201).json({
-      message: "Admin registered successfully",
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    });
+    return sendCreated(res, "Admin registered successfully", { userId: user.id, email: user.email, role: user.role });
     
   } catch (error) {
     console.error("Registration error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Registration failed" });
+    return sendInternalServerError(res, "Registration failed");
   }
 };
 
@@ -142,7 +130,7 @@ email:string;
 const storedToken =await redis.get(`verify:${email}`);
 
 if (!storedToken || storedToken !== token) {
-return res.status(400).json({message:"Invalid or expired verification link",email});
+return sendBadRequest(res, "Invalid or expired verification link", {}, email);
     }
 
 await prisma.user.update({
@@ -170,9 +158,9 @@ return res.redirect(`http://localhost:5173/login?verified=true`);
   }catch (error) {
     console.error("Email verification error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({message:"Email verification failed"});
+    return sendInternalServerError(res, "Email verification failed");
   }
 };
 export const resendVerifyEmail =async (
@@ -208,9 +196,9 @@ email:string;
   }catch (error) {
     console.error("Resend verification error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to resend verification email" });
+    return sendInternalServerError(res, "Failed to resend verification email");
   }
 };
 
@@ -229,22 +217,22 @@ export const loginUser = async (
       
     })
     if (!user) {
-return res.status(404).json({message:"User not found with this email" });
+return sendNotFound(res, "User not found with this email");
     }
     if (!user.isVerified) {
-return res
-        .status(403)
-        .json({message:"Please verify your email first" });
+return sendForbidden(res, "Please verify your email first");
     }
 const isMatch =await bcrypt.compare(password, user.password);
 if (!isMatch) {
-return res.status(400).json({message:"Invalid credentials, Wrong Password" });
+return sendBadRequest(res, "Invalid credentials, Wrong Password");
     }
-    // Generate JWT Token
+    // Generate JWT Tokens
     if (!process.env.JWT_SECRET) {
       throw new Error("JWT_SECRET is missing");
     }
-    const token = jwt.sign(
+    
+    // Access Token (1 hour expiration)
+    const accessToken = jwt.sign(
       {
         userId: user.id,
         username: user.name,
@@ -254,23 +242,57 @@ return res.status(400).json({message:"Invalid credentials, Wrong Password" });
       process.env.JWT_SECRET,
       { expiresIn: "1h" }
     );
-    console.log("✅ Token generated:", token.substring(0, 20) + "...");
-    res.cookie("token", token, {
+
+    // Refresh Token (1 day expiration)
+    const refreshToken = jwt.sign(
+      {
+        userId: user.id,
+        email: user.email,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1d" }
+    );
+
+    console.log("✅ Access Token generated:", accessToken.substring(0, 20) + "...");
+    console.log("✅ Refresh Token generated:", refreshToken.substring(0, 20) + "...");
+
+    // Set Access Token in HTTP-only cookie (1 hour)
+    res.cookie("accessToken", accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      maxAge: 24 * 60 * 60 * 1000,
+      maxAge: 60 * 60 * 1000, // 1 hour
     });
-    console.log("✅ Cookie set successfully");
-  return res.json({message:"You are now logged-in",data:{userId:user.id,name:user.name,email:user.email,address:user.address,role:user.role}})
+
+    // Set Refresh Token in HTTP-only cookie (1 day)
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
+    });
+
+    // Also store refresh token in Redis for validation (1 day)
+    await redis.setex(`refreshToken:${user.id}`, 24 * 60 * 60, refreshToken);
+
+    console.log("✅ Cookies set successfully");
+  return sendOK(res, "You are now logged-in", {
+    userId:user.id,
+    name:user.name,
+    email:user.email,
+    address:user.address,
+    role:user.role,
+    accessToken: accessToken,
+    refreshToken: refreshToken
+  })
 
     
   } catch (error) {
     console.error("Login error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Login failed" });
+    return sendInternalServerError(res, "Login failed");
   }
 }
 
@@ -356,9 +378,9 @@ export const getAllUsers = async (
   } catch (error) {
     console.error("Get all users error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to fetch users" });
+    return sendInternalServerError(res, "Failed to fetch users");
   }
 };
 
@@ -387,16 +409,16 @@ export const getSingleUser = async (
     });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return sendNotFound(res, "User not found");
     }
    
-    return res.json(user);
+    return sendOK(res, "User fetched successfully", user);
   } catch (error) {
     console.error("Get single user error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to fetch user" });
+    return sendInternalServerError(res, "Failed to fetch user");
   }
 };
 
@@ -444,16 +466,13 @@ export const updateUser = async (
       },
     });
 
-    return res.status(200).json({
-      message: "User updated successfully",
-      updatedUser,
-    });
+    return sendOK(res, "User updated successfully", updatedUser);
   } catch (error) {
     console.error("Update user error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to update user" });
+    return sendInternalServerError(res, "Failed to update user");
   }
 };
 
@@ -469,13 +488,13 @@ export const deleteUser = async (
       where: { id },
     });
 
-    return res.status(200).json({ message: "User deleted successfully" });
+    return sendOK(res, "User deleted successfully");
   } catch (error) {
     console.error("Delete user error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to delete user" });
+    return sendInternalServerError(res, "Failed to delete user");
   }
 }
 
@@ -491,7 +510,7 @@ export const forgotPassword = async (
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ message: "Email is required" });
+      return sendBadRequest(res, "Email is required");
     }
 
     // Check if user exists
@@ -501,9 +520,7 @@ export const forgotPassword = async (
 
     if (!user) {
       // Don't reveal if email exists or not for security
-      return res.status(200).json({
-        message: "If the email exists, a password reset link has been sent.",
-      });
+      return sendOK(res, "If the email exists, a password reset link has been sent.");
     }
 
     // Generate reset token
@@ -528,18 +545,16 @@ export const forgotPassword = async (
       );
     } catch (emailError) {
       console.error("Failed to send reset email:", emailError);
-      return res.status(500).json({ message: "Failed to send reset email" });
+      return sendInternalServerError(res, "Failed to send reset email");
     }
 
-    return res.status(200).json({
-      message: "If the email exists, a password reset link has been sent.",
-    });
+    return sendOK(res, "If the email exists, a password reset link has been sent.");
   } catch (error) {
     console.error("Forgot password error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to process forgot password" });
+    return sendInternalServerError(res, "Failed to process forgot password");
   }
 };
 
@@ -555,27 +570,22 @@ export const verifyResetToken = async (
     const { token, email } = req.query as { token: string; email: string };
 
     if (!token || !email) {
-      return res.status(400).json({ message: "Token and email are required" });
+      return sendBadRequest(res, "Token and email are required");
     }
 
     const storedToken = await redis.get(`reset:${email}`);
 
     if (!storedToken || storedToken !== token) {
-      return res.status(400).json({
-        message: "Invalid or expired password reset link",
-      });
+      return sendBadRequest(res, "Invalid or expired password reset link");
     }
 
-    return res.status(200).json({
-      message: "Token is valid",
-      valid: true,
-    });
+    return sendOK(res, "Token is valid", { valid: true });
   } catch (error) {
     console.error("Verify reset token error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to verify token" });
+    return sendInternalServerError(res, "Failed to verify token");
   }
 };
 
@@ -592,26 +602,22 @@ export const resetPassword = async (
 
     // Validate inputs
     if (!token || !email || !newPassword || !confirmPassword) {
-      return res.status(400).json({ message: "All fields are required" });
+      return sendBadRequest(res, "All fields are required");
     }
 
     if (newPassword !== confirmPassword) {
-      return res.status(400).json({ message: "Passwords do not match" });
+      return sendBadRequest(res, "Passwords do not match");
     }
 
     if (newPassword.length < 6) {
-      return res.status(400).json({
-        message: "Password must be at least 6 characters",
-      });
+      return sendBadRequest(res, "Password must be at least 6 characters");
     }
 
     // Verify token
     const storedToken = await redis.get(`reset:${email}`);
 
     if (!storedToken || storedToken !== token) {
-      return res.status(400).json({
-        message: "Invalid or expired password reset link",
-      });
+      return sendBadRequest(res, "Invalid or expired password reset link");
     }
 
     // Check if user exists
@@ -620,7 +626,7 @@ export const resetPassword = async (
     });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return sendNotFound(res, "User not found");
     }
 
     // Hash new password
@@ -635,15 +641,133 @@ export const resetPassword = async (
     // Delete reset token from Redis
     await redis.del(`reset:${email}`);
 
-    return res.status(200).json({
-      message: "Password has been reset successfully. Please login with your new password.",
-    });
+    return sendOK(res, "Password has been reset successfully. Please login with your new password.");
   } catch (error) {
     console.error("Reset password error:", error);
     if (error instanceof Error) {
-      return res.status(400).json({ message: error.message });
+      return sendBadRequest(res, error.message);
     }
-    return res.status(500).json({ message: "Failed to reset password" });
+    return sendInternalServerError(res, "Failed to reset password");
+  }
+};
+
+/**
+ * ✅ Refresh Token - Generate new access token using refresh token
+ */
+export const refreshAccessToken = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return sendBadRequest(res, "Refresh token is required");
+    }
+
+    // Verify refresh token
+    if (!process.env.JWT_SECRET) {
+      throw new Error("JWT_SECRET is missing");
+    }
+
+    let decoded: any;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    } catch (error: any) {
+      if (error.name === "TokenExpiredError") {
+        // Clear cookies and return token expired error
+        res.clearCookie("accessToken");
+        res.clearCookie("refreshToken");
+        await redis.del(`refreshToken:${error.decoded?.userId}`);
+        return sendBadRequest(res, "Session expired. Please login again.");
+      }
+      return sendBadRequest(res, "Invalid refresh token");
+    }
+
+    // Get user from database to fetch latest info
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+    });
+
+    if (!user) {
+      return sendNotFound(res, "User not found");
+    }
+
+    // Verify refresh token in Redis
+    const storedRefreshToken = await redis.get(`refreshToken:${user.id}`);
+    if (!storedRefreshToken || storedRefreshToken !== refreshToken) {
+      res.clearCookie("accessToken");
+      res.clearCookie("refreshToken");
+      return sendBadRequest(res, "Invalid or expired refresh token. Please login again.");
+    }
+
+    // Generate new access token (1 hour)
+    const newAccessToken = jwt.sign(
+      {
+        userId: user.id,
+        username: user.name,
+        email: user.email,
+        role: user.role,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    console.log("✅ New Access Token generated:", newAccessToken.substring(0, 20) + "...");
+
+    // Set new Access Token in HTTP-only cookie
+    res.cookie("accessToken", newAccessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
+      maxAge: 60 * 60 * 1000, // 1 hour
+    });
+
+    console.log("✅ New access token cookie set successfully");
+
+    return sendOK(res, "Access token refreshed successfully", {
+      userId: user.id,
+      accessToken: newAccessToken,
+      expiresIn: 3600, // 1 hour in seconds
+    });
+  } catch (error) {
+    console.error("Refresh token error:", error);
+    if (error instanceof Error) {
+      return sendBadRequest(res, error.message);
+    }
+    return sendInternalServerError(res, "Failed to refresh token");
+  }
+};
+
+/**
+ * ✅ Logout - Clear tokens and end session
+ */
+export const logoutUser = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const userId = req.user?.userId;
+
+    if (userId) {
+      // Delete refresh token from Redis
+      await redis.del(`refreshToken:${userId}`);
+    }
+
+    // Clear cookies
+    res.clearCookie("accessToken");
+    res.clearCookie("refreshToken");
+    res.clearCookie("token"); // Clear old token cookie if exists
+
+    return sendOK(res, "Logged out successfully");
+  } catch (error) {
+    console.error("Logout error:", error);
+    if (error instanceof Error) {
+      return sendBadRequest(res, error.message);
+    }
+    return sendInternalServerError(res, "Failed to logout");
   }
 };
 

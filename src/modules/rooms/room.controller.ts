@@ -7,6 +7,7 @@ import {
 } from "./RoomDTOS/room.dtos";
 import prisma from "../../config/prismaClient";
 import { deleteFromS3 } from "../../utils/uploadToS3";
+import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError } from "../../utils/response";
 import constants from "constants";
 
 export const createRoom = async (
@@ -26,9 +27,7 @@ export const createRoom = async (
   },
 });
 if (!seatPricing) {
-  return res.status(400).json({
-    message: "Seat pricing not found for this room type",
-  });
+  return sendBadRequest(res, "Seat pricing not found for this room type");
 }
     const room = await prisma.room.create({
       data: {
@@ -41,7 +40,7 @@ if (!seatPricing) {
         price:seatPricing.price
       },
     });
-    res.status(201).json({ message: "Room is successfully Created", room });
+    return sendCreated(res, "Room is successfully Created", room);
   } catch (error) {
     next(error);
   }
@@ -70,9 +69,7 @@ export const updateRoom = async (
         status
       },
     });
-    res
-      .status(201)
-      .json({ message: "Room data is successfully updated ", room });
+    return sendCreated(res, "Room data is successfully updated", room);
   } catch (error) {
     next(error);
   }
@@ -151,8 +148,7 @@ if (beds) {
 
     const totalRooms = await prisma.room.count({ where });
 
-    res.status(200).json({
-      message: "Rooms fetched successfully",
+    return sendOK(res, "Rooms fetched successfully", {
       total: totalRooms,
       page: Number(page),
       limit: Number(limit),
@@ -179,7 +175,7 @@ export const getSingleRoom = async (
     });
 
     if (!room) {
-      return res.status(404).json({ message: "Room not found" });
+      return sendNotFound(res, "Room not found");
     }
 
     // 2️⃣ Get seat pricing for this room type
@@ -201,11 +197,7 @@ export const getSingleRoom = async (
     }, {} as Record<string, number>);
 
     // 4️⃣ Final response
-    return res.status(200).json({
-      message: "Single Room fetched successfully",
-      room,
-      prices, // { SHORT_TERM: 2500, LONG_TERM: 45000 }
-    });
+    return sendOK(res, "Single Room fetched successfully", { room, prices });
   } catch (error) {
     next(error);
   }
@@ -221,7 +213,7 @@ export const deleteRoom = async (
     const { id } = req.params;
     const roomExists = await prisma.room.findUnique({ where: { id } });
     if (!roomExists) {
-      return res.status(404).json({ message: "Room not found" });
+      return sendNotFound(res, "Room not found");
     }
     const images = await prisma.roomImage.findMany({
       where: { roomId: id },
@@ -249,7 +241,7 @@ export const deleteRoom = async (
       where: { id },
     });
 
-    res.status(200).json({ message: "Room deleted successfully" });
+    return sendOK(res, "Room deleted successfully");
   } catch (error) {
     next(error);
   }

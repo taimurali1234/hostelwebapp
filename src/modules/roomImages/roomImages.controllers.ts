@@ -1,6 +1,7 @@
 import { deleteFromS3, uploadToS3 } from "../../utils/uploadToS3";
 import { Request, Response, NextFunction } from "express";
 import prisma from "../../config/prismaClient";
+import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError } from "../../utils/response";
 
 export const uploadImage = async (
   req: Request,
@@ -12,15 +13,13 @@ export const uploadImage = async (
     const files = req.files;
     console.log(roomId, files);
     if (!files || files.length === 0)
-      return res.status(400).json({ message: "No files uploaded" });
+      return sendBadRequest(res, "No files uploaded");
     const existingImagesCount = await prisma.roomImage.count({
       where: { roomId },
     });
 
     if (existingImagesCount === 5) {
-      return res.status(400).json({
-        message: `You can upload maximum 5 images per room. Already uploaded: ${existingImagesCount}. Delete some images to upload again`,
-      });
+      return sendBadRequest(res, `You can upload maximum 5 images per room. Already uploaded: ${existingImagesCount}. Delete some images to upload again`);
     }
 
     const uploadedImages = [];
@@ -37,9 +36,7 @@ export const uploadImage = async (
     }
 
     if (uploadedImages) {
-      res
-        .status(201)
-        .json({ message: "Image successfully uploaded", uploadedImages });
+      sendCreated(res, "Image successfully uploaded", uploadedImages);
     }
   } catch (error) {
     next(error);
@@ -61,7 +58,7 @@ export const deleteRoomImage = async (
     });
 
     if (!image) {
-      return res.status(404).json({ message: "Image not found" });
+      return sendNotFound(res, "Image not found");
     }
 
     // 2️⃣ Extract S3 Key from URL
@@ -79,12 +76,10 @@ export const deleteRoomImage = async (
     // 4️⃣ Delete from DB
     const imagesAfterDelete = await prisma.roomImage.delete({ where: { id } });
 
-    res
-      .status(200)
-      .json({ message: "Image deleted successfully", imagesAfterDelete });
+    sendOK(res, "Image deleted successfully", imagesAfterDelete);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Internal server error", err });
+    sendInternalServerError(res, "Internal server error");
   }
 };
 export const getRoomImages = async (
@@ -96,7 +91,7 @@ export const getRoomImages = async (
     const { roomId } = req.params;
 
     if (!roomId) {
-      return res.status(400).json({ message: "roomId is required" });
+      return sendBadRequest(res, "roomId is required");
     }
 
     const images = await prisma.roomImage.findMany({
@@ -104,7 +99,7 @@ export const getRoomImages = async (
       select: { id: true, url: true }, // only return necessary fields
     });
 
-    return res.status(200).json({ images });
+    return sendOK(res, "Images fetched successfully", { images });
   } catch (error) {
     next(error);
   }
