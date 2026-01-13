@@ -263,12 +263,23 @@ export const updateBooking = async (
       return sendBadRequest(res, "Checkout required for short term booking");
     }
 
-    if (
-      parsedData.bookingType === BookingType.LONG_TERM &&
-      parsedData.checkOut
-    ) {
-      return sendBadRequest(res, "Checkout not allowed for long term booking");
-    }
+//     if (
+//   parsedData.bookingType === BookingType.LONG_TERM &&
+//   "checkOut" in parsedData &&
+//   parsedData.checkOut !== undefined
+// ) {
+//   return sendBadRequest(
+//     res,
+//     "Do not send checkout when booking type is long term"
+//   );
+// }
+
+// 🧹 Auto clear checkout when switching to LONG_TERM
+if (
+  parsedData.bookingType === BookingType.LONG_TERM 
+) {
+  parsedData.checkOut = null;
+}
 
     const updatedBooking = await prisma.$transaction(async (tx) => {
       // 🪑 Seats management logic based on status change
@@ -399,69 +410,97 @@ export const getSingleBooking = async (req: Request, res: Response) => {
 
 export const getAllBookings = async (req: Request, res: Response) => {
   try {
-    // Extract filters from query params
-    const { search, status, bookingType, source } = req.query;
+    const {
+      search = "",
+      status = "",
+      bookingType = "",
+      source = "",
+      page = "1",
+      limit = "10",
+    } = req.query as Record<string, string>;
 
-    // Build where conditions dynamically
+    const pageNumber = Math.max(Number(page), 1);
+    const pageSize = Math.max(Number(limit), 1);
+    const skip = (pageNumber - 1) * pageSize;
+
+    /* =========================
+       WHERE CLAUSE
+    ========================== */
+
     const where: any = {};
 
-    // Filter by status
-    if (status && status !== "") {
+    if (status) {
       where.status = status;
     }
 
-    // Filter by booking type
-    if (bookingType && bookingType !== "") {
+    if (bookingType) {
       where.bookingType = bookingType;
     }
 
-    // Filter by source
-    if (source && source !== "") {
+    if (source) {
       where.source = source;
     }
 
-    // Filter by search (user name or room name or booking ID)
-    if (search && search !== "") {
+    if (search) {
       where.OR = [
         {
           user: {
             OR: [
-              { firstName: { contains: search as string, mode: "insensitive" } },
-              { lastName: { contains: search as string, mode: "insensitive" } },
-              { email: { contains: search as string, mode: "insensitive" } },
+              { firstName: { contains: search, mode: "insensitive" } },
+              { lastName: { contains: search, mode: "insensitive" } },
+              { email: { contains: search, mode: "insensitive" } },
             ],
           },
         },
         {
           room: {
             OR: [
-              { title: { contains: search as string, mode: "insensitive" } },
-              { name: { contains: search as string, mode: "insensitive" } },
+              { title: { contains: search, mode: "insensitive" } },
+              { name: { contains: search, mode: "insensitive" } },
             ],
           },
         },
         {
-          id: { contains: search as string, mode: "insensitive" },
+          id: { contains: search, mode: "insensitive" },
         },
       ];
     }
 
-    // Fetch bookings with applied filters
-    const bookings = await prisma.booking.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      include: {
-        room: true,
-        user: true,
-      },
-    });
+    /* =========================
+       DB QUERIES (PARALLEL)
+    ========================== */
 
-    return sendOK(res, "Bookings fetched successfully", bookings);
+    const [bookings, total] = await Promise.all([
+      prisma.booking.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { createdAt: "desc" },
+        include: {
+          room: true,
+          user: true,
+        },
+      }),
+
+      prisma.booking.count({ where }),
+    ]);
+
+    /* =========================
+       RESPONSE
+    ========================== */
+
+    return sendOK(res, "Bookings fetched successfully", {
+      items: bookings,
+      total,
+      page: pageNumber,
+      limit: pageSize,
+    });
   } catch (error) {
     console.error("Error fetching bookings:", error);
     return sendInternalServerError(res, "Failed to fetch bookings");
   }
 };
+
 
 export const deleteBooking = async (req: Request, res: Response, next: NextFunction) => {
   try {

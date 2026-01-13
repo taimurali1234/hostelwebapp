@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { CustomJwtPayload } from "../types/jwt";
 
 const authenticateUser = async (req:Request,res:Response,next:NextFunction):Promise<Response | void> =>{
-    const token=req.cookies.token || req.header('Authorization')?.replace('Bearer ','');
+    const token= req.cookies.accessToken ||req.cookies.refreshToken || req.header('Authorization')?.replace('Bearer ','');
     if(!token){
         return res.status(401).json({message:'Authentication token missing'});
     }
@@ -16,6 +16,7 @@ const authenticateUser = async (req:Request,res:Response,next:NextFunction):Prom
         const user=await prisma.user.findUnique({
             where:{id:decoded.userId}
         });
+        // console.log("Authenticated user:", user);
         if(!user){
             return res.status(401).json({message:'Invalid token: user not found'});
         }

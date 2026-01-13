@@ -248,6 +248,7 @@ return sendBadRequest(res, "Invalid credentials, Wrong Password");
       {
         userId: user.id,
         email: user.email,
+        role: user.role,
       },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
@@ -282,8 +283,7 @@ return sendBadRequest(res, "Invalid credentials, Wrong Password");
     email:user.email,
     address:user.address,
     role:user.role,
-    accessToken: accessToken,
-    refreshToken: refreshToken
+    
   })
 
     
@@ -660,8 +660,8 @@ export const refreshAccessToken = async (
   next: NextFunction
 ): Promise<Response | void> => {
   try {
-    const { refreshToken } = req.body;
-
+    const { refreshToken } = req.cookies.refreshToken ? req.cookies : {};
+    const userId = req.user?.userId;
     if (!refreshToken) {
       return sendBadRequest(res, "Refresh token is required");
     }
@@ -728,7 +728,6 @@ export const refreshAccessToken = async (
 
     return sendOK(res, "Access token refreshed successfully", {
       userId: user.id,
-      accessToken: newAccessToken,
       expiresIn: 3600, // 1 hour in seconds
     });
   } catch (error) {

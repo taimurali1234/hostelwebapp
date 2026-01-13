@@ -7,11 +7,11 @@ import { z } from "zod";
    ========================= */
 
 export const createNotificationSchema = z.object({
-    audience: z.nativeEnum(NotificationAudience),
+    audience: z.nativeEnum(NotificationAudience," Invalid audience").optional(),
 
     userId: z
       .string()
-      .uuid("Invalid userId")
+      .uuid("Invalid userId").nullable()
       .optional(),
 
     title: z
@@ -29,28 +29,7 @@ export const createNotificationSchema = z.object({
       .optional()
       .default(NotificationSeverity.INFO),
   })
-  .superRefine((data, ctx) => {
-    // USER → userId required
-    if (data.audience === NotificationAudience.USER && !data.userId) {
-      ctx.addIssue({
-        path: ["userId"],
-        message: "userId is required when audience is USER",
-        code: z.ZodIssueCode.custom,
-      });
-    }
-
-    // ADMIN / ALL_USERS → userId must NOT exist
-    if (
-      data.audience !== NotificationAudience.USER &&
-      data.userId
-    ) {
-      ctx.addIssue({
-        path: ["userId"],
-        message: "userId is only allowed when audience is USER",
-        code: z.ZodIssueCode.custom,
-      });
-    }
-  });
+  
 
 export type CreateNotificationDTO = z.infer<
   typeof createNotificationSchema

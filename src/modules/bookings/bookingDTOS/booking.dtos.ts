@@ -42,69 +42,29 @@ export const createBookingSchema = z
 
     source: z.nativeEnum(BookingSource).optional(),
   })
-  .refine(
-    (data) =>
-      data.bookingType === BookingType.SHORT_TERM
-        ? !!data.checkOut
-        : true,
-    {
-      message: "Checkout date is required for SHORT_TERM booking",
-      path: ["checkOut"],
-    }
-  )
-  .refine(
-    (data) =>
-      data.bookingType === BookingType.LONG_TERM
-        ? !data.checkOut
-        : true,
-    {
-      message: "Checkout date is not allowed for LONG_TERM booking",
-      path: ["checkOut"],
-    }
-  );
+ 
 
 /**
  * UPDATE BOOKING
  */
-export const updateBookingSchema = z
-  .object({
-    bookingType: z.nativeEnum(BookingType).optional(),
+export const updateBookingSchema = z.object({
+  bookingType: z.nativeEnum(BookingType).optional(),
 
-    checkIn: z.string().optional(),
-    checkOut: z.string().optional(),
+  checkIn: z.string().optional(),
+  checkOut: z.string().nullable().optional(),
 
-    baseAmount: z.number().min(0).optional(),
-    taxAmount: z.number().min(0).optional(),
-    discount: z.number().min(0).optional(),
-    couponCode: z.string().min(0).optional(),
+  baseAmount: z.number().min(0).optional(),
+  taxAmount: z.number().min(0).optional(),
+  discount: z.number().min(0).optional(),
+  couponCode: z.string().optional(),
 
+  seatsSelected: z.number().min(1).optional(),
+  totalAmount: z.number().min(0).optional(),
 
-    seatsSelected: z.number().min(1).optional(),
-    totalAmount: z.number().min(0).optional(),
-    status:z.nativeEnum(BookingStatus).optional(),
+  status: z.nativeEnum(BookingStatus).optional(),
+  source: z.nativeEnum(BookingSource).optional(),
+});
 
-    source: z.nativeEnum(BookingSource).optional(),
-  })
-  .refine(
-    (data) =>
-      data.bookingType === BookingType.SHORT_TERM
-        ? !!data.checkOut
-        : true,
-    {
-      message: "Checkout date is required for SHORT_TERM booking",
-      path: ["checkOut"],
-    }
-  )
-  .refine(
-    (data) =>
-      data.bookingType === BookingType.LONG_TERM
-        ? !data.checkOut
-        : true,
-    {
-      message: "Checkout date is not allowed for LONG_TERM booking",
-      path: ["checkOut"],
-    }
-  );
 
 export type createBookingDTO = z.infer<typeof createBookingSchema>;
 export type updateBookingDTO = z.infer<typeof updateBookingSchema>;

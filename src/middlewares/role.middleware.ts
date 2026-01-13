@@ -5,7 +5,7 @@ import { CustomJwtPayload } from "../types/jwt";
 
 const authenticateUserWithRole = (roles: string[] = ["USER"])=> async (req:Request,res:Response,next:NextFunction):Promise<Response | void> =>{
     const authHeader = req.header("Authorization");
-const token = req.cookies.token ||
+const token = req.cookies.accessToken || req.cookies.refreshToken ||    
              (authHeader && authHeader.split(" ")[0] === "Bearer"
                 ? authHeader.split(" ")[1]
                 : null);

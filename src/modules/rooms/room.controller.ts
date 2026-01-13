@@ -53,9 +53,61 @@ export const updateRoom = async (
 ): Promise<Response | void> => {
   try {
     const { id } = req.params;
+
     const parsedData: updateRoomDTO = updateRoomSchema.parse(req.body);
-    console.log(parsedData)
-     const {title,type,floor,beds,washrooms,description,status} = parsedData;
+    const {
+      title,
+      type,
+      floor,
+      beds,
+      washrooms,
+      description,
+      status,
+    } = parsedData;
+
+    /* =========================
+       GET EXISTING ROOM
+    ========================== */
+
+    const existingRoom = await prisma.room.findUnique({
+      where: { id },
+      select: { type: true },
+    });
+
+    if (!existingRoom) {
+      return res.status(404).json({ message: "Room not found" });
+    }
+
+    /* =========================
+       PRICE LOGIC
+    ========================== */
+
+    let priceUpdate: number | undefined = undefined;
+
+    // 🔥 If room type changed → fetch price
+    if (type && type !== existingRoom.type) {
+      const seatPricing = await prisma.seatPricing.findFirst({
+        where: {
+          roomType: type,
+          isActive: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+
+      if (!seatPricing) {
+        return res.status(400).json({
+          message: `No active seat pricing found for room type ${type}`,
+        });
+      }
+
+      priceUpdate = seatPricing.price;
+    }
+
+    /* =========================
+       UPDATE ROOM
+    ========================== */
 
     const room = await prisma.room.update({
       where: { id },
@@ -66,14 +118,17 @@ export const updateRoom = async (
         beds,
         washrooms,
         description,
-        status
+        status,
+        ...(priceUpdate !== undefined && { price: priceUpdate }),
       },
     });
+
     return sendCreated(res, "Room data is successfully updated", room);
   } catch (error) {
     next(error);
   }
 };
+
 
 export const getRooms = async (
   req: Request,

@@ -12,6 +12,7 @@ import { sendUnauthorized, sendBadRequest, sendError, sendOK, sendNotFound, send
 export const getMyNotifications = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = req.user?.userId;
+    console.log("Authenticated userId:", userId);
 
     if (!userId) {
       return sendUnauthorized(res, "You are not authenticated yet");
@@ -114,6 +115,7 @@ export const markAsRead = async (req: Request, res: Response, next: NextFunction
 
 export const createNotification = async (req: Request, res: Response, next: NextFunction) => {
   try {
+    console.log("Request body:", req.body);
     const parsedData = createNotificationSchema.safeParse(req.body);
 
     if (!parsedData.success) {
