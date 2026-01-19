@@ -7,7 +7,6 @@ import {
 } from "./RoomDTOS/room.dtos";
 import prisma from "../../config/prismaClient";
 import { deleteFromS3 } from "../../utils/uploadToS3";
-import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError } from "../../utils/response";
 import constants from "constants";
 
 export const createRoom = async (
@@ -17,18 +16,32 @@ export const createRoom = async (
 ): Promise<Response | void> => {
   try {
     const parsedData: createRoomDTO = createRoomSchema.parse(req.body);
-    const { title, type, floor, beds, washrooms, description} =
-      parsedData;
-      console.log(parsedData)
-      const seatPricing = await prisma.seatPricing.findFirst({
-  where: {
-    roomType: type,
-    isActive: true,
-  },
-});
-if (!seatPricing) {
-  return sendBadRequest(res, "Seat pricing not found for this room type");
-}
+    const { title, type, floor, beds, washrooms, description } = parsedData;
+
+    // Fetch both SHORT_TERM and LONG_TERM pricing
+    const shortTermPricing = await prisma.seatPricing.findFirst({
+      where: {
+        roomType: type,
+        stayType: "SHORT_TERM",
+        isActive: true,
+      },
+    });
+
+    const longTermPricing = await prisma.seatPricing.findFirst({
+      where: {
+        roomType: type,
+        stayType: "LONG_TERM",
+        isActive: true,
+      },
+    });
+
+    if (!shortTermPricing || !longTermPricing) {
+      return res.status(400).json({
+        success: false,
+        message: "Short-term or Long-term seat pricing not found for this room type"
+      });
+    }
+
     const room = await prisma.room.create({
       data: {
         title,
@@ -37,12 +50,28 @@ if (!seatPricing) {
         beds,
         washrooms,
         description,
-        price:seatPricing.price
+        shortTermPrice: shortTermPricing.price,
+        longTermPrice: longTermPricing.price,
       },
     });
-    return sendCreated(res, "Room is successfully Created", room);
+
+    return res.status(201).json({
+      success: true,
+      message: "Room created successfully",
+      data: room
+    });
   } catch (error) {
-    next(error);
+    console.error(error);
+    if (error instanceof Error && error.message.includes("validation")) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid room data provided"
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -65,30 +94,28 @@ export const updateRoom = async (
       status,
     } = parsedData;
 
-    /* =========================
-       GET EXISTING ROOM
-    ========================== */
-
+    // Get existing room
     const existingRoom = await prisma.room.findUnique({
       where: { id },
       select: { type: true },
     });
 
     if (!existingRoom) {
-      return res.status(404).json({ message: "Room not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Room not found"
+      });
     }
 
-    /* =========================
-       PRICE LOGIC
-    ========================== */
+    // Price logic: If room type changed, fetch both pricing types
+    let shortTermPriceUpdate: number | undefined = undefined;
+    let longTermPriceUpdate: number | undefined = undefined;
 
-    let priceUpdate: number | undefined = undefined;
-
-    // 🔥 If room type changed → fetch price
     if (type && type !== existingRoom.type) {
-      const seatPricing = await prisma.seatPricing.findFirst({
+      const shortTermPricing = await prisma.seatPricing.findFirst({
         where: {
           roomType: type,
+          stayType: "SHORT_TERM",
           isActive: true,
         },
         orderBy: {
@@ -96,18 +123,27 @@ export const updateRoom = async (
         },
       });
 
-      if (!seatPricing) {
+      const longTermPricing = await prisma.seatPricing.findFirst({
+        where: {
+          roomType: type,
+          stayType: "LONG_TERM",
+          isActive: true,
+        },
+        orderBy: {
+          createdAt: "desc",
+        },
+      });
+
+      if (!shortTermPricing || !longTermPricing) {
         return res.status(400).json({
-          message: `No active seat pricing found for room type ${type}`,
+          success: false,
+          message: `No active seat pricing found for room type ${type}`
         });
       }
 
-      priceUpdate = seatPricing.price;
+      shortTermPriceUpdate = shortTermPricing.price;
+      longTermPriceUpdate = longTermPricing.price;
     }
-
-    /* =========================
-       UPDATE ROOM
-    ========================== */
 
     const room = await prisma.room.update({
       where: { id },
@@ -119,13 +155,28 @@ export const updateRoom = async (
         washrooms,
         description,
         status,
-        ...(priceUpdate !== undefined && { price: priceUpdate }),
+        ...(shortTermPriceUpdate !== undefined && { shortTermPrice: shortTermPriceUpdate }),
+        ...(longTermPriceUpdate !== undefined && { longTermPrice: longTermPriceUpdate }),
       },
     });
 
-    return sendCreated(res, "Room data is successfully updated", room);
+    return res.status(200).json({
+      success: true,
+      message: "Room updated successfully",
+      data: room
+    });
   } catch (error) {
-    next(error);
+    console.error(error);
+    if (error instanceof Error && error.message.includes("validation")) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid room data provided"
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -144,45 +195,45 @@ export const getRooms = async (
       minPrice,
       maxPrice,
       page = "1",
-      limit = "10",
+      limit = "12",
       sort = "createdAt_desc",
     } = req.query;
+
     const where: any = {};
-    // console.log(status,title,beds,type)
-  if (title) {
-  where.OR = [
-    {
-      title: {
-        contains: title as string,
-        mode: "insensitive",
-      },
-    },
-    {
-      floor: {
-        contains: title as string,
-        mode: "insensitive",
-      },
-    },
-  ];
-}
 
-if (type) {
-  where.type = type; // ENUM-safe
-}
+    if (title) {
+      where.OR = [
+        {
+          title: {
+            contains: title as string,
+            mode: "insensitive",
+          },
+        },
+        {
+          floor: {
+            contains: title as string,
+            mode: "insensitive",
+          },
+        },
+      ];
+    }
 
-if (status) {
-  where.status = status; // ENUM-safe
-}
+    if (type) {
+      where.type = type;
+    }
 
-if (beds) {
-  where.beds = Number(beds);
-}
-    
-    // if (type) where.type = type;
+    if (status) {
+      where.status = status;
+    }
+
+    if (beds) {
+      where.beds = Number(beds);
+    }
+
     if (minPrice || maxPrice) {
-      where.price = {};
-      if (minPrice) where.price.gte = Number(minPrice);
-      if (maxPrice) where.price.lte = Number(maxPrice);
+      where.shortTermPrice = {};
+      if (minPrice) where.shortTermPrice.gte = Number(minPrice);
+      if (maxPrice) where.shortTermPrice.lte = Number(maxPrice);
     }
 
     const orderBy: any = {};
@@ -203,14 +254,22 @@ if (beds) {
 
     const totalRooms = await prisma.room.count({ where });
 
-    return sendOK(res, "Rooms fetched successfully", {
-      total: totalRooms,
-      page: Number(page),
-      limit: Number(limit),
-      rooms,
+    return res.status(200).json({
+      success: true,
+      message: "Rooms fetched successfully",
+      data: {
+        total: totalRooms,
+        page: Number(page),
+        limit: Number(limit),
+        rooms,
+      }
     });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 export const getSingleRoom = async (
@@ -221,19 +280,21 @@ export const getSingleRoom = async (
   try {
     const { id } = req.params;
 
-    // 1️⃣ Get room with images
     const room = await prisma.room.findUnique({
       where: { id },
       include: {
         images: true,
+        videos: true,
       },
     });
 
     if (!room) {
-      return sendNotFound(res, "Room not found");
+      return res.status(404).json({
+        success: false,
+        message: "Room not found"
+      });
     }
 
-    // 2️⃣ Get seat pricing for this room type
     const seatPricings = await prisma.seatPricing.findMany({
       where: {
         roomType: room.type,
@@ -245,16 +306,22 @@ export const getSingleRoom = async (
       },
     });
 
-    // 3️⃣ Format pricing
     const prices = seatPricings.reduce((acc, item) => {
       acc[item.stayType] = item.price;
       return acc;
     }, {} as Record<string, number>);
 
-    // 4️⃣ Final response
-    return sendOK(res, "Single Room fetched successfully", { room, prices });
+    return res.status(200).json({
+      success: true,
+      message: "Room fetched successfully",
+      data: { room, prices }
+    });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -266,38 +333,52 @@ export const deleteRoom = async (
 ): Promise<Response | void> => {
   try {
     const { id } = req.params;
+
     const roomExists = await prisma.room.findUnique({ where: { id } });
     if (!roomExists) {
-      return sendNotFound(res, "Room not found");
+      return res.status(404).json({
+        success: false,
+        message: "Room not found"
+      });
     }
+
     const images = await prisma.roomImage.findMany({
       where: { roomId: id },
       select: { url: true },
     });
+
     const videos = await prisma.roomVideo.findMany({
-      where:{roomId:id},
-      select:{url:true}
-    })
+      where: { roomId: id },
+      select: { url: true },
+    });
+
     await Promise.all(
       images.map((img) => {
         const key = decodeURIComponent(img.url.split("/").slice(-2).join("/"));
-        console.log(key)
-         return deleteFromS3(key);
+        return deleteFromS3(key);
       })
     );
+
     await Promise.all(
-       videos.map((video) => {
+      videos.map((video) => {
         const key = decodeURIComponent(video.url.split("/").slice(-2).join("/"));
-        console.log(key)
-         return deleteFromS3(key);
+        return deleteFromS3(key);
       })
-    )
-    const room = await prisma.room.delete({
+    );
+
+    await prisma.room.delete({
       where: { id },
     });
 
-    return sendOK(res, "Room deleted successfully");
+    return res.status(200).json({
+      success: true,
+      message: "Room deleted successfully"
+    });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };

@@ -25,23 +25,24 @@ model User {
 }
 
 model Room {
-  id          String      @id @default(uuid())
-  title       String
-  type        RoomType
-  floor       String
-  beds        Int
-  washrooms   Int
-  description String
-  price       Int?
-  stayType    BookingType  @default(LONG_TERM)
-  status      RoomStatus  @default(AVAILABLE)
-  bookedSeats Int @default(0)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  bookings    Booking[]
-  reviews     Review[]
-  images      RoomImage[]
-  videos      RoomVideo[]
+  id              String      @id @default(uuid())
+  title           String
+  type            RoomType
+  floor           String
+  beds            Int
+  washrooms       Int
+  description     String
+  shortTermPrice  Int?
+  longTermPrice   Int?
+  stayType        BookingType  @default(LONG_TERM)
+  status          RoomStatus  @default(AVAILABLE)
+  bookedSeats     Int @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  bookings        Booking[]
+  reviews         Review[]
+  images          RoomImage[]
+  videos          RoomVideo[]
 
 }
 model RoomVideo{

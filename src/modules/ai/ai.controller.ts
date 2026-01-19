@@ -6,7 +6,6 @@ import { Request, Response, NextFunction } from "express";
 import { aiService, ConversationResponse, WelcomeResponse } from "./ai.service";
 import { speechHandler } from "./speech.handler";
 import { z } from "zod";
-import { sendUnauthorized, sendOK } from "../../utils/response";
 
 // Validation schemas
 const messageSchema = z.object({
@@ -35,20 +34,31 @@ export const getWelcomeMessage = async (
 
     if (!userId) {
       // Generate generic welcome for non-authenticated users
-      return res.json({
-        text: "Welcome to HostelZilla! 👋 We're excited to help you find the perfect accommodation. Are you a new guest or returning?",
-        userName: "Guest",
-        hostelName: "HostelZilla",
-        timestamp: new Date(),
-        conversationId: `welcome_guest_${Date.now()}`,
-      } as WelcomeResponse);
+      return res.status(200).json({
+        success: true,
+        message: "Welcome message retrieved",
+        data: {
+          text: "Welcome to HostelZilla! We're excited to help you find the perfect accommodation. Are you a new guest or returning?",
+          userName: "Guest",
+          hostelName: "HostelZilla",
+          timestamp: new Date(),
+          conversationId: `welcome_guest_${Date.now()}`,
+        }
+      });
     }
 
     const welcomeResponse = await aiService.getWelcomeMessage(userId, includeAudio);
-
-    return sendOK(res, "Welcome message retrieved", welcomeResponse);
+    return res.status(200).json({
+      success: true,
+      message: "Welcome message retrieved successfully",
+      data: welcomeResponse
+    });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -65,7 +75,10 @@ export const sendMessage = async (
   try {
     const userId = req.user?.userId;
     if (!userId) {
-      return sendUnauthorized(res, "Not authenticated");
+      return res.status(401).json({
+        success: false,
+        message: "You are not authenticated"
+      });
     }
 
     const parsedData = messageSchema.parse(req.body);
@@ -87,9 +100,23 @@ export const sendMessage = async (
       { includeAudio }
     );
 
-    return sendOK(res, "Message processed successfully", response);
+    return res.status(200).json({
+      success: true,
+      message: "Message processed successfully",
+      data: response
+    });
   } catch (error) {
-    next(error);
+    console.error(error);
+    if (error instanceof Error && error.message.includes("validation")) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid message data provided"
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -106,7 +133,10 @@ export const streamMessage = async (
   try {
     const userId = req.user?.userId;
     if (!userId) {
-      return sendUnauthorized(res, "Not authenticated");
+      return res.status(401).json({
+        success: false,
+        message: "You are not authenticated"
+      });
     }
 
     const parsedData = messageSchema.parse(req.body);
@@ -168,7 +198,17 @@ export const streamMessage = async (
     // Save conversation
     await aiService.saveConversation(userId, response.conversationId, message, response.text);
   } catch (error) {
-    next(error);
+    console.error(error);
+    if (error instanceof Error && error.message.includes("validation")) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid message data provided"
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -187,9 +227,23 @@ export const getQuickResponse = async (
 
     const response = await aiService.getQuickResponse(query, includeAudio);
 
-    return sendOK(res, "Quick response retrieved", response);
+    return res.status(200).json({
+      success: true,
+      message: "Quick response retrieved successfully",
+      data: response
+    });
   } catch (error) {
-    next(error);
+    console.error(error);
+    if (error instanceof Error && error.message.includes("validation")) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid query data provided"
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -205,14 +259,25 @@ export const getRecommendations = async (
   try {
     const userId = req.user?.userId;
     if (!userId) {
-      return sendUnauthorized(res, "Not authenticated");
+      return res.status(401).json({
+        success: false,
+        message: "You are not authenticated"
+      });
     }
 
     const recommendations = await aiService.getPersonalizedRecommendations(userId);
 
-    return sendOK(res, "Recommendations retrieved", recommendations);
+    return res.status(200).json({
+      success: true,
+      message: "Recommendations retrieved successfully",
+      data: recommendations
+    });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -228,19 +293,30 @@ export const getConversationHistory = async (
   try {
     const userId = req.user?.userId;
     if (!userId) {
-      return sendUnauthorized(res, "Not authenticated");
+      return res.status(401).json({
+        success: false,
+        message: "You are not authenticated"
+      });
     }
 
     const { conversationId } = req.params;
 
     // In production, fetch from database
-    return sendOK(res, "Conversation history retrieved", {
-      conversationId,
-      messages: [],
-      note: "Fetch from AiAction table in database",
+    return res.status(200).json({
+      success: true,
+      message: "Conversation history retrieved successfully",
+      data: {
+        conversationId,
+        messages: [],
+        note: "Fetch from AiAction table in database",
+      }
     });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -256,19 +332,38 @@ export const saveUserPreference = async (
   try {
     const userId = req.user?.userId;
     if (!userId) {
-      return sendUnauthorized(res, "Not authenticated");
+      return res.status(401).json({
+        success: false,
+        message: "You are not authenticated"
+      });
     }
 
     const { preference, value } = req.body;
 
+    if (!preference || value === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Preference and value are required"
+      });
+    }
+
     // Save preference data
     // This could be used to personalize future interactions
 
-    return sendOK(res, "Preference saved successfully", {
-      preference,
-      value,
+    return res.status(200).json({
+      success: true,
+      message: "Preference saved successfully",
+      data: {
+        preference,
+        value,
+      }
     });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
+

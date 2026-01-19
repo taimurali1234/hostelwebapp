@@ -1,7 +1,15 @@
 import { deleteFromS3, uploadToS3 } from "../../utils/uploadToS3";
 import { Request, Response, NextFunction } from "express";
 import prisma from "../../config/prismaClient";
-import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError } from "../../utils/response";
+import {
+  sendCreated,
+  sendBadRequest,
+  sendNotFound,
+  sendOK,
+  sendInternalServerError,
+} from "../../utils/response";
+
+/* ================= UPLOAD VIDEO ================= */
 
 export const uploadVideo = async (
   req: Request,
@@ -11,15 +19,14 @@ export const uploadVideo = async (
   try {
     const { roomId } = req.body;
     const file = req.file;
-    console.log(roomId, file);
-    if (!file)
-      return sendBadRequest(res, "No Video file uploaded");
-    const existingVideosCount = await prisma.roomVideo.count({
-      where: { roomId },
-    });
 
-    if (existingVideosCount >= 5) {
-      return sendBadRequest(res, `You can upload maximum 1 video per room. Already uploaded: ${existingVideosCount}. Delete existing video to upload again`);
+    if (!roomId) return sendBadRequest(res, "Room ID is required");
+    if (!file) return sendBadRequest(res, "No video file uploaded");
+
+    const existingCount = await prisma.roomVideo.count({ where: { roomId } });
+
+    if (existingCount >= 1) {
+      return sendBadRequest(res, "Only 1 video allowed per room");
     }
 
     const url = await uploadToS3(file);
@@ -28,50 +35,18 @@ export const uploadVideo = async (
       data: { url, roomId },
     });
 
-    sendCreated(res, "Video successfully uploaded", video);
+    return sendCreated(res, "Video uploaded successfully", { video });
   } catch (error) {
-    next(error);
-  }
-};
-
-export const deleteRoomVideo = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<Response | void> => {
-  try {
-    const { id } = req.params; // roomImage id
-
-    // 1️⃣ Get image record
-    const video = await prisma.roomVideo.findUnique({
-      where: { id },
-    });
-
-    if (!video) {
-      return sendNotFound(res, "Video not found");
+    console.error(error);
+    if (error instanceof Error && error.message.includes("validation")) {
+      return sendBadRequest(res, "Invalid video data provided");
     }
-
-    // 2️⃣ Extract S3 Key from URL
-    // Example: https://bucket-name.s3.region.amazonaws.com/rooms/123-room.jpg
-    const url = video.url;
-    const urlParts = url.split("/");
-    const keyIndex = urlParts.findIndex((part) => part.includes("rooms"));
-    let key = urlParts.slice(keyIndex).join("/"); // rooms/123-room.jpg
-    key = decodeURIComponent(key);
-    console.log(key);
-
-    // 3️⃣ Delete from S3
-    await deleteFromS3(key);
-
-    // 4️⃣ Delete from DB
-    const deletedVideo = await prisma.roomVideo.delete({ where: { id } });
-
-    sendOK(res, "Video deleted successfully", deletedVideo);
-  } catch (err) {
-    console.error(err);
-    sendInternalServerError(res, "Internal server error");
+    return sendInternalServerError(res, "Server is currently unavailable. Please try again later.");
   }
 };
+
+/* ================= GET VIDEOS ================= */
+
 export const getRoomVideos = async (
   req: Request,
   res: Response,
@@ -80,17 +55,45 @@ export const getRoomVideos = async (
   try {
     const { roomId } = req.params;
 
-    if (!roomId) {
-      return sendBadRequest(res, "roomId is required");
-    }
+    if (!roomId) return sendBadRequest(res, "Room ID is required");
 
-    const images = await prisma.roomImage.findMany({
+    const videos = await prisma.roomVideo.findMany({
       where: { roomId },
-      select: { id: true, url: true }, // only return necessary fields
+      select: { id: true, url: true },
     });
 
-    return sendOK(res, "Videos fetched successfully", { images });
+    return sendOK(res, "Videos fetched successfully", { images: videos });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return sendInternalServerError(res, "Server is currently unavailable. Please try again later.");
+  }
+};
+
+/* ================= DELETE VIDEO ================= */
+
+export const deleteRoomVideo = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<Response | void> => {
+  try {
+    const { id } = req.params;
+
+    const video = await prisma.roomVideo.findUnique({ where: { id } });
+
+    if (!video) return sendNotFound(res, "Video not found");
+
+    const urlParts = video.url.split("/");
+    const keyIndex = urlParts.findIndex((p) => p.includes("rooms"));
+    let key = decodeURIComponent(urlParts.slice(keyIndex).join("/"));
+
+    await deleteFromS3(key);
+
+    await prisma.roomVideo.delete({ where: { id } });
+
+    return sendOK(res, "Video deleted successfully");
+  } catch (error) {
+    console.error(error);
+    return sendInternalServerError(res, "Server is currently unavailable. Please try again later.");
   }
 };

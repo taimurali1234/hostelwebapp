@@ -8,6 +8,8 @@ export const uploadImages = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
   fileFilter: (_, file, cb) => {
+        console.log(file); 
+
     if (file.mimetype.startsWith("image/")) cb(null, true);
     else cb(new Error("Only images are allowed"));
   },
@@ -18,6 +20,7 @@ export const uploadVideos = multer({
   storage,
   limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
   fileFilter: (_, file, cb) => {
+    console.log(file.mimetype); 
     if (file.mimetype.startsWith("video/")) cb(null, true);
     else cb(new Error("Only videos are allowed"));
   },

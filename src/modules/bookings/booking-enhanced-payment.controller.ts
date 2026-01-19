@@ -14,7 +14,6 @@ import prisma from "../../config/prismaClient";
 import { BookingType, BookingStatus } from "@prisma/client";
 import PaymentService from "../payments/payment.service";
 import { z } from "zod";
-import { sendUnauthorized, sendNotFound, sendForbidden, sendBadRequest, sendCreated, sendOK, sendError } from "../../utils/response";
 
 /**
  * OPTION 1: Create Booking with Immediate Payment Initiation
@@ -31,7 +30,7 @@ export const createBookingWithPayment = async (
     const userId = req.user?.userId;
 
     if (!userId) {
-      return sendUnauthorized(res, "You are not authenticated");
+      return res.status(401).json({ success: false, message: "You are not authenticated" });
     }
 
     // Validate the request
@@ -107,7 +106,7 @@ export const createBookingWithPayment = async (
     });
 
     if ("error" in booking) {
-      return sendError(res, booking.status, booking.error);
+      return res.status(booking.status).json({ success: false, message: booking.error });
     }
 
     // 4. Initiate payment (outside transaction for better error handling)
@@ -127,16 +126,20 @@ export const createBookingWithPayment = async (
         data: { bookedSeats: { decrement: booking.seatsSelected } },
       });
 
-      return sendBadRequest(res, paymentResponse.message);
+      return res.status(400).json({ success: false, message: paymentResponse.message });
     }
 
-    return sendCreated(res, "Booking created. Payment initiated.", {
-      booking,
-      payment: {
-        transactionId: paymentResponse.transactionId,
-        paymentUrl: paymentResponse.paymentUrl,
-        paymentStatus: paymentResponse.paymentStatus,
-      },
+    return res.status(201).json({
+      success: true,
+      message: "Booking created. Payment initiated.",
+      data: {
+        booking,
+        payment: {
+          transactionId: paymentResponse.transactionId,
+          paymentUrl: paymentResponse.paymentUrl,
+          paymentStatus: paymentResponse.paymentStatus,
+        },
+      }
     });
   } catch (error) {
     next(error);
@@ -192,12 +195,12 @@ export const getBookingWithPaymentDetails = async (
     });
 
     if (!booking) {
-      return sendNotFound(res, "Booking not found");
+      return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
     // Check authorization (user can only see their own booking, admin can see all)
     if (userId !== booking.userId && req.user?.role !== "ADMIN") {
-      return sendForbidden(res, "Not your booking");
+      return res.status(403).json({ success: false, message: "Not your booking" });
     }
 
     // Add computed fields
@@ -216,7 +219,7 @@ export const getBookingWithPaymentDetails = async (
       },
     };
 
-    return sendOK(res, "Booking with payment details fetched successfully", response);
+    return res.status(200).json({ success: true, message: "Booking with payment details fetched successfully", data: response });
   } catch (error) {
     next(error);
   }
@@ -243,16 +246,16 @@ export const cancelBookingWithRefund = async (
     });
 
     if (!booking) {
-      return sendNotFound(res, "Booking not found");
+      return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
     // Authorization check
     if (userId !== booking.userId && req.user?.role !== "ADMIN") {
-      return sendForbidden(res, "Not your booking");
+      return res.status(403).json({ success: false, message: "Not your booking" });
     }
 
     if (booking.status === "CANCELLED") {
-      return sendBadRequest(res, "Booking is already cancelled");
+      return res.status(400).json({ success: false, message: "Booking is already cancelled" });
     }
 
     const result = await prisma.$transaction(async (tx) => {
@@ -302,14 +305,17 @@ export const cancelBookingWithRefund = async (
       );
     }
 
-    return res.json({
+    return res.status(200).json({
+      success: true,
       message: "Booking cancelled successfully",
-      booking: result,
-      refund: booking.payment?.paymentStatus === "SUCCESS" ? {
-        status: "PROCESSING",
-        amount: booking.totalAmount,
-        transactionId: booking.payment.transactionId,
-      } : null,
+      data: {
+        booking: result,
+        refund: booking.payment?.paymentStatus === "SUCCESS" ? {
+          status: "PROCESSING",
+          amount: booking.totalAmount,
+          transactionId: booking.payment.transactionId,
+        } : null,
+      }
     });
   } catch (error) {
     next(error);
@@ -382,9 +388,13 @@ export const getAllBookingsWithPaymentStatus = async (
       },
     }));
 
-    return res.json({
-      bookings: enrichedBookings,
-      total: enrichedBookings.length,
+    return res.status(200).json({
+      success: true,
+      message: "Bookings fetched successfully",
+      data: {
+        bookings: enrichedBookings,
+        total: enrichedBookings.length,
+      }
     });
   } catch (error) {
     next(error);

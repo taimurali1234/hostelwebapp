@@ -5,7 +5,6 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import redis from "../../config/redis";
 import sendEmail from "../../utils/sendEmailLink";
-import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError, sendForbidden } from "../../utils/response";
 import {
   RegisterUserSchema,
   RegisterUserDTO,
@@ -44,7 +43,7 @@ export const registerUser = async (
     });
 
     if (existingUser) {
-      return sendBadRequest(res, "Email already registered");
+      return res.status(400).json({ success: false, message: "Email already registered" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -97,22 +96,22 @@ export const registerUser = async (
            <a href="${verificationLink}">Verify Email</a>`
         );
 
-        return sendCreated(res, "Registration successful! Please check your email to verify your account.", { userId: user.id, email: user.email });
+        return res.status(201).json({ success: true, message: "Registration successful! Please check your email to verify your account.", data: { userId: user.id, email: user.email } });
       } catch (emailError) {
         console.error("Email sending failed:", emailError);
         // Still return success even if email fails, user can resend
-        return sendCreated(res, "Registration successful! Email verification link could not be sent. Please use resend email option.", { userId: user.id, email: user.email });
+        return res.status(201).json({ success: true, message: "Registration successful! Email verification link could not be sent. Please use resend email option.", data: { userId: user.id, email: user.email } });
       }
     }
     
-    return sendCreated(res, "Admin registered successfully", { userId: user.id, email: user.email, role: user.role });
+    return res.status(201).json({ success: true, message: "Admin registered successfully", data: { userId: user.id, email: user.email, role: user.role } });
     
   } catch (error) {
     console.error("Registration error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Registration failed");
+    return res.status(500).json({ success: false, message: "Registration failed" });
   }
 };
 
@@ -130,7 +129,7 @@ email:string;
 const storedToken =await redis.get(`verify:${email}`);
 
 if (!storedToken || storedToken !== token) {
-return sendBadRequest(res, "Invalid or expired verification link", {}, email);
+return res.status(400).json({ success: false, message: "Invalid or expired verification link" });
     }
 
 await prisma.user.update({
@@ -158,9 +157,9 @@ return res.redirect(`http://localhost:5173/login?verified=true`);
   }catch (error) {
     console.error("Email verification error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Email verification failed");
+    return res.status(500).json({ success: false, message: "Email verification failed" });
   }
 };
 export const resendVerifyEmail =async (
@@ -190,15 +189,16 @@ email:string;
     );
 
 
- return res.json({
-      message: "We have sent the verification email again. Please check your inbox.",
+ return res.status(200).json({
+      success: true,
+      message: "We have sent the verification email again. Please check your inbox."
     });
   }catch (error) {
     console.error("Resend verification error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Failed to resend verification email");
+    return res.status(500).json({ success: false, message: "Failed to resend verification email" });
   }
 };
 
@@ -212,19 +212,20 @@ export const loginUser = async (
 
     const loginParsedData:LoginDTO = LoginSchema.parse(req.body)
     const {email,password} = loginParsedData;
+    console.log("Login attempt for email:", email);
     const user = await prisma.user.findUnique({
       where:{email},
       
     })
     if (!user) {
-return sendNotFound(res, "User not found with this email");
+return res.status(404).json({ success: false, message: "User not found with this email" });
     }
     if (!user.isVerified) {
-return sendForbidden(res, "Please verify your email first");
+return res.status(403).json({ success: false, message: "Please verify your email first" });
     }
 const isMatch =await bcrypt.compare(password, user.password);
 if (!isMatch) {
-return sendBadRequest(res, "Invalid credentials, Wrong Password");
+return res.status(400).json({ success: false, message: "Invalid credentials, Wrong Password" });
     }
     // Generate JWT Tokens
     if (!process.env.JWT_SECRET) {
@@ -277,22 +278,22 @@ return sendBadRequest(res, "Invalid credentials, Wrong Password");
     await redis.setex(`refreshToken:${user.id}`, 24 * 60 * 60, refreshToken);
 
     console.log("✅ Cookies set successfully");
-  return sendOK(res, "You are now logged-in", {
+  return res.status(200).json({ success: true, message: "You are now logged-in", data: {
     userId:user.id,
     name:user.name,
     email:user.email,
     address:user.address,
     role:user.role,
     
-  })
+  }})
 
     
   } catch (error) {
     console.error("Login error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Login failed");
+    return res.status(500).json({ success: false, message: "Login failed" });
   }
 }
 
@@ -369,18 +370,22 @@ export const getAllUsers = async (
       prisma.user.count({ where }),
     ]);
 
-    return res.json({
-      users,
-      total,
-      page: pageNumber,
-      limit: pageSize,
+    return res.status(200).json({
+      success: true,
+      message: "Users fetched successfully",
+      data: {
+        users,
+        total,
+        page: pageNumber,
+        limit: pageSize,
+      }
     });
   } catch (error) {
     console.error("Get all users error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Failed to fetch users");
+    return res.status(500).json({ success: false, message: "Failed to fetch users" });
   }
 };
 
@@ -409,16 +414,16 @@ export const getSingleUser = async (
     });
 
     if (!user) {
-      return sendNotFound(res, "User not found");
+      return res.status(404).json({ success: false, message: "User not found" });
     }
    
-    return sendOK(res, "User fetched successfully", user);
+    return res.status(200).json({ success: true, message: "User fetched successfully", data: user });
   } catch (error) {
     console.error("Get single user error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Failed to fetch user");
+    return res.status(500).json({ success: false, message: "Failed to fetch user" });
   }
 };
 
@@ -466,13 +471,13 @@ export const updateUser = async (
       },
     });
 
-    return sendOK(res, "User updated successfully", updatedUser);
+    return res.status(200).json({ success: true, message: "User updated successfully", data: updatedUser });
   } catch (error) {
     console.error("Update user error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Failed to update user");
+    return res.status(500).json({ success: false, message: "Failed to update user" });
   }
 };
 
@@ -488,13 +493,13 @@ export const deleteUser = async (
       where: { id },
     });
 
-    return sendOK(res, "User deleted successfully");
+    return res.status(200).json({ success: true, message: "User deleted successfully" });
   } catch (error) {
     console.error("Delete user error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Failed to delete user");
+    return res.status(500).json({ success: false, message: "Failed to delete user" });
   }
 }
 
@@ -510,7 +515,7 @@ export const forgotPassword = async (
     const { email } = req.body;
 
     if (!email) {
-      return sendBadRequest(res, "Email is required");
+      return res.status(400).json({ success: false, message: "Email is required" });
     }
 
     // Check if user exists
@@ -520,7 +525,7 @@ export const forgotPassword = async (
 
     if (!user) {
       // Don't reveal if email exists or not for security
-      return sendOK(res, "If the email exists, a password reset link has been sent.");
+      return res.status(200).json({ success: true, message: "If the email exists, a password reset link has been sent." });
     }
 
     // Generate reset token
@@ -545,16 +550,16 @@ export const forgotPassword = async (
       );
     } catch (emailError) {
       console.error("Failed to send reset email:", emailError);
-      return sendInternalServerError(res, "Failed to send reset email");
+      return res.status(500).json({ success: false, message: "Failed to send reset email" });
     }
 
-    return sendOK(res, "If the email exists, a password reset link has been sent.");
+    return res.status(200).json({ success: true, message: "If the email exists, a password reset link has been sent." });
   } catch (error) {
     console.error("Forgot password error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Failed to process forgot password");
+    return res.status(500).json({ success: false, message: "Failed to process forgot password" });
   }
 };
 
@@ -570,22 +575,22 @@ export const verifyResetToken = async (
     const { token, email } = req.query as { token: string; email: string };
 
     if (!token || !email) {
-      return sendBadRequest(res, "Token and email are required");
+      return res.status(400).json({ success: false, message: "Token and email are required" });
     }
 
     const storedToken = await redis.get(`reset:${email}`);
 
     if (!storedToken || storedToken !== token) {
-      return sendBadRequest(res, "Invalid or expired password reset link");
+      return res.status(400).json({ success: false, message: "Invalid or expired password reset link" });
     }
 
-    return sendOK(res, "Token is valid", { valid: true });
+    return res.status(200).json({ success: true, message: "Token is valid", data: { valid: true } });
   } catch (error) {
     console.error("Verify reset token error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Failed to verify token");
+    return res.status(500).json({ success: false, message: "Failed to verify token" });
   }
 };
 
@@ -602,22 +607,22 @@ export const resetPassword = async (
 
     // Validate inputs
     if (!token || !email || !newPassword || !confirmPassword) {
-      return sendBadRequest(res, "All fields are required");
+      return res.status(400).json({ success: false, message: "All fields are required" });
     }
 
     if (newPassword !== confirmPassword) {
-      return sendBadRequest(res, "Passwords do not match");
+      return res.status(400).json({ success: false, message: "Passwords do not match" });
     }
 
     if (newPassword.length < 6) {
-      return sendBadRequest(res, "Password must be at least 6 characters");
+      return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
     }
 
     // Verify token
     const storedToken = await redis.get(`reset:${email}`);
 
     if (!storedToken || storedToken !== token) {
-      return sendBadRequest(res, "Invalid or expired password reset link");
+      return res.status(400).json({ success: false, message: "Invalid or expired password reset link" });
     }
 
     // Check if user exists
@@ -626,7 +631,7 @@ export const resetPassword = async (
     });
 
     if (!user) {
-      return sendNotFound(res, "User not found");
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
     // Hash new password
@@ -641,13 +646,13 @@ export const resetPassword = async (
     // Delete reset token from Redis
     await redis.del(`reset:${email}`);
 
-    return sendOK(res, "Password has been reset successfully. Please login with your new password.");
+    return res.status(200).json({ success: true, message: "Password has been reset successfully. Please login with your new password." });
   } catch (error) {
     console.error("Reset password error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Failed to reset password");
+    return res.status(500).json({ success: false, message: "Failed to reset password" });
   }
 };
 
@@ -663,7 +668,7 @@ export const refreshAccessToken = async (
     const { refreshToken } = req.cookies.refreshToken ? req.cookies : {};
     const userId = req.user?.userId;
     if (!refreshToken) {
-      return sendBadRequest(res, "Refresh token is required");
+      return res.status(400).json({ success: false, message: "Refresh token is required" });
     }
 
     // Verify refresh token
@@ -680,9 +685,9 @@ export const refreshAccessToken = async (
         res.clearCookie("accessToken");
         res.clearCookie("refreshToken");
         await redis.del(`refreshToken:${error.decoded?.userId}`);
-        return sendBadRequest(res, "Session expired. Please login again.");
+        return res.status(400).json({ success: false, message: "Session expired. Please login again." });
       }
-      return sendBadRequest(res, "Invalid refresh token");
+      return res.status(400).json({ success: false, message: "Invalid refresh token" });
     }
 
     // Get user from database to fetch latest info
@@ -691,7 +696,7 @@ export const refreshAccessToken = async (
     });
 
     if (!user) {
-      return sendNotFound(res, "User not found");
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
     // Verify refresh token in Redis
@@ -699,7 +704,7 @@ export const refreshAccessToken = async (
     if (!storedRefreshToken || storedRefreshToken !== refreshToken) {
       res.clearCookie("accessToken");
       res.clearCookie("refreshToken");
-      return sendBadRequest(res, "Invalid or expired refresh token. Please login again.");
+      return res.status(400).json({ success: false, message: "Invalid or expired refresh token. Please login again." });
     }
 
     // Generate new access token (1 hour)
@@ -726,16 +731,20 @@ export const refreshAccessToken = async (
 
     console.log("✅ New access token cookie set successfully");
 
-    return sendOK(res, "Access token refreshed successfully", {
-      userId: user.id,
-      expiresIn: 3600, // 1 hour in seconds
+    return res.status(200).json({
+      success: true,
+      message: "Access token refreshed successfully",
+      data: {
+        userId: user.id,
+        expiresIn: 3600, // 1 hour in seconds
+      }
     });
   } catch (error) {
     console.error("Refresh token error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Failed to refresh token");
+    return res.status(500).json({ success: false, message: "Failed to refresh token" });
   }
 };
 
@@ -760,13 +769,13 @@ export const logoutUser = async (
     res.clearCookie("refreshToken");
     res.clearCookie("token"); // Clear old token cookie if exists
 
-    return sendOK(res, "Logged out successfully");
+    return res.status(200).json({ success: true, message: "Logged out successfully" });
   } catch (error) {
     console.error("Logout error:", error);
     if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+      return res.status(400).json({ success: false, message: error.message });
     }
-    return sendInternalServerError(res, "Failed to logout");
+    return res.status(500).json({ success: false, message: "Failed to logout" });
   }
 };
 

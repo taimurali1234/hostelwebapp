@@ -1,4 +1,4 @@
-import {  RoomStatus, RoomType } from "@prisma/client";
+import {  RoomStatus, RoomType, BookingType } from "@prisma/client";
 import { z } from "zod";
 
 export const createRoomSchema = z.object({
@@ -7,7 +7,8 @@ export const createRoomSchema = z.object({
   description: z.string("Must give the description"),
   beds: z.number("Must be the number"),
   washrooms: z.number("Must be the number"),
-  price: z.number("Must be the number").optional(),
+  shortTermPrice: z.number("Must be the number").optional(),
+  longTermPrice: z.number("Must be the number").optional(),
   bookedSeats: z.number("Must be the number").optional(),
   availableSeats: z.number("Must be the number").optional(),
   type: z.nativeEnum(RoomType, {
@@ -23,7 +24,8 @@ export const updateRoomSchema = z.object({
   description: z.string("Must give the description").optional(),
   beds: z.number("Must be the number").optional(),
   washrooms: z.number("Must be the number").optional(),
-  price: z.number("Must be the number").optional(),
+  shortTermPrice: z.number("Must be the number").optional(),
+  longTermPrice: z.number("Must be the number").optional(),
   bookedSeats: z.number("Must be the number").optional(),
   availableSeats: z.number("Must be the number").optional(),
   type: z.nativeEnum(RoomType, {

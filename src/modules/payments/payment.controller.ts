@@ -5,7 +5,6 @@ import { EasyPaisaPaymentService } from "./easypaise.service";
 import { JazzCashPaymentService } from "./jazzcash.service";
 import prisma from "../../config/prismaClient";
 import { z } from "zod";
-import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError, sendForbidden } from "../../utils/response";
 
 // Validation schemas
 const initiatePaymentSchema = z.object({
@@ -40,11 +39,17 @@ export const initiatePayment = async (
     });
 
     if (!booking) {
-      return sendNotFound(res, "Booking not found");
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found"
+      });
     }
 
     if (booking.userId !== userId && req.user?.role !== "ADMIN") {
-      return sendForbidden(res, "Not your booking");
+      return res.status(403).json({
+        success: false,
+        message: "You cannot initiate payment for this booking"
+      });
     }
 
     // Initiate payment
@@ -57,16 +62,33 @@ export const initiatePayment = async (
     });
 
     if (!paymentResponse.success) {
-      return sendBadRequest(res, paymentResponse.message, { status: paymentResponse.paymentStatus });
+      return res.status(400).json({
+        success: false,
+        message: paymentResponse.message
+      });
     }
 
-    return sendOK(res, "Payment initiated successfully", {
-      transactionId: paymentResponse.transactionId,
-      paymentUrl: paymentResponse.paymentUrl,
-      paymentStatus: paymentResponse.paymentStatus,
+    return res.status(200).json({
+      success: true,
+      message: "Payment initiated successfully",
+      data: {
+        transactionId: paymentResponse.transactionId,
+        paymentUrl: paymentResponse.paymentUrl,
+        paymentStatus: paymentResponse.paymentStatus,
+      }
     });
   } catch (error) {
-    next(error);
+    console.error(error);
+    if (error instanceof Error && error.message.includes("validation")) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment data provided"
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -85,12 +107,23 @@ export const getPaymentDetails = async (
     const payment = await PaymentService.getPaymentDetails(bookingId);
 
     if (!payment) {
-      return sendNotFound(res, "Payment record not found");
+      return res.status(404).json({
+        success: false,
+        message: "Payment record not found"
+      });
     }
 
-    return sendOK(res, "Payment details fetched successfully", payment);
+    return res.status(200).json({
+      success: true,
+      message: "Payment details fetched successfully",
+      data: payment
+    });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -112,7 +145,10 @@ export const verifyPayment = async (
     });
 
     if (!payment) {
-      return sendNotFound(res, "Payment record not found");
+      return res.status(404).json({
+        success: false,
+        message: "Payment record not found"
+      });
     }
 
     // Verify with payment provider
@@ -121,13 +157,27 @@ export const verifyPayment = async (
       payment.paymentMethod
     );
 
-    return sendOK(res, "Payment verified", {
-      verified: verification.verified,
-      status: verification.status,
-      transactionId: payment.transactionId,
+    return res.status(200).json({
+      success: true,
+      message: "Payment verified successfully",
+      data: {
+        verified: verification.verified,
+        status: verification.status,
+        transactionId: payment.transactionId,
+      }
     });
   } catch (error) {
-    next(error);
+    console.error(error);
+    if (error instanceof Error && error.message.includes("validation")) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid verification data provided"
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
 
@@ -144,7 +194,10 @@ export const stripeWebhook = async (
     const event = req.body;
 
     if (!event || !event.type) {
-      return sendBadRequest(res, "Invalid webhook payload");
+      return res.status(400).json({
+        success: false,
+        message: "Invalid webhook payload"
+      });
     }
 
     switch (event.type) {
@@ -176,9 +229,17 @@ export const stripeWebhook = async (
         break;
     }
 
-    return sendOK(res, "Webhook received", { received: true });
+    return res.status(200).json({
+      success: true,
+      message: "Webhook processed successfully",
+      data: { received: true }
+    });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Webhook processing failed. Please try again later."
+    });
   }
 };
 
@@ -208,20 +269,27 @@ export const easyPaisaCallback = async (
           PaymentMethod.EASYPAISA
         );
 
-        return res.json({
-          success: result.success,
-          message: result.message,
+        return res.status(200).json({
+          success: true,
+          message: "Payment processed successfully",
+          data: {
+            success: result.success,
+            message: result.message,
+          }
         });
       }
     }
 
-    return res.json({
+    return res.status(400).json({
       success: false,
-      message: "Payment verification failed",
-      status: callbackResult.status,
+      message: "Payment verification failed"
     });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Payment callback processing failed. Please try again later."
+    });
   }
 };
 
@@ -242,7 +310,6 @@ export const jazzCashCallback = async (
 
     if (callbackResult.status === "SUCCESS") {
       // Extract bookingId from transaction reference
-      // JazzCash returns pp_TxnRefNo which should contain booking info
       const refNo = callbackResult.transactionId;
       // Extract bookingId from reference (adjust based on your format)
       const bookingId = refNo?.split("-")[0];
@@ -251,23 +318,30 @@ export const jazzCashCallback = async (
         const result = await PaymentService.handlePaymentSuccess(
           callbackResult.transactionId,
           bookingId,
-          PaymentMethod.PAYPAL // JazzCash uses PAYPAL enum value
+          PaymentMethod.PAYPAL
         );
 
-        return res.json({
-          success: result.success,
-          message: result.message,
+        return res.status(200).json({
+          success: true,
+          message: "Payment processed successfully",
+          data: {
+            success: result.success,
+            message: result.message,
+          }
         });
       }
     }
 
-    return res.json({
+    return res.status(400).json({
       success: false,
-      message: "Payment verification failed",
-      status: callbackResult.status,
+      message: "Payment verification failed"
     });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Payment callback processing failed. Please try again later."
+    });
   }
 };
 
@@ -289,18 +363,29 @@ export const getPaymentStatus = async (
     });
 
     if (!payment) {
-      return sendNotFound(res, "Payment not found");
+      return res.status(404).json({
+        success: false,
+        message: "Payment not found"
+      });
     }
 
-    return sendOK(res, "Payment status fetched", {
-      transactionId: payment.transactionId,
-      bookingId: payment.bookingId,
-      paymentMethod: payment.paymentMethod,
-      paymentStatus: payment.paymentStatus,
-      createdAt: payment.createdAt,
-      bookingStatus: payment.booking.status,
+    return res.status(200).json({
+      success: true,
+      message: "Payment status fetched successfully",
+      data: {
+        transactionId: payment.transactionId,
+        bookingId: payment.bookingId,
+        paymentMethod: payment.paymentMethod,
+        paymentStatus: payment.paymentStatus,
+        createdAt: payment.createdAt,
+        bookingStatus: payment.booking.status,
+      }
     });
   } catch (error) {
-    next(error);
+    console.error(error);
+    return res.status(500).json({
+      success: false,
+      message: "Server is currently unavailable. Please try again later."
+    });
   }
 };
