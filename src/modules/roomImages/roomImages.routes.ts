@@ -14,9 +14,13 @@ import {
 
 const router = express.Router();
 
+/**
+ * Room Images and Videos Routes
+ */
+
 /* ================= IMAGES ================= */
 
-// Upload images (max 5)
+// Upload images (max 5) - ADMIN or COORDINATOR only
 router.post(
   "/",
   authenticateUserWithRole(["ADMIN", "COORDINATOR"]),
@@ -24,16 +28,16 @@ router.post(
   uploadImage
 );
 
-// Get images by roomId
+// Get images by roomId - ADMIN or COORDINATOR only
 router.get("/:roomId", authenticateUserWithRole(["ADMIN", "COORDINATOR"]), getRoomImages);
 
-// Delete image
+// Delete image - ADMIN only
 router.delete("/:id", authenticateUserWithRole(["ADMIN"]), deleteRoomImage);
 
 
 /* ================= VIDEOS ================= */
 
-// Upload video (1 only)
+// Upload video (1 only) - ADMIN or COORDINATOR only
 router.post(
   "/video",
   authenticateUserWithRole(["ADMIN", "COORDINATOR"]),
@@ -41,14 +45,14 @@ router.post(
   uploadVideo
 );
 
-// Get videos by roomId
+// Get videos by roomId - ADMIN or COORDINATOR only
 router.get(
   "/video/:roomId",
   authenticateUserWithRole(["ADMIN", "COORDINATOR"]),
   getRoomVideos
 );
 
-// Delete video
+// Delete video - ADMIN only
 router.delete(
   "/video/:id",
   authenticateUserWithRole(["ADMIN"]),

@@ -5,9 +5,20 @@ import authenticateUser from "../../middlewares/auth.middleware";
 
 const router = Router();
 
-router.post("/",authenticateUserWithRole(["ADMIN"]),createNotification);
+/**
+ * Notification Routes
+ */
+
+// Create notification - ADMIN only
+router.post("/", authenticateUserWithRole(["ADMIN"]), createNotification);
+
+// Get my notifications - authenticated users only
 router.get("/", authenticateUser, getMyNotifications);
-router.patch("/:id/read", markAsRead);
-router.delete("/:id",authenticateUserWithRole(["ADMIN"]), deleteNotification);
+
+// Mark as read - authenticated users only
+router.patch("/:id/read", authenticateUser, markAsRead);
+
+// Delete notification - ADMIN only
+router.delete("/:id", authenticateUserWithRole(["ADMIN"]), deleteNotification);
 
 export default router;

@@ -4,12 +4,21 @@ import {
   getActiveTaxConfig,
   updateTaxConfig,
 } from "./taxconfig.controllers";
+import authenticateUserWithRole from "../../../middlewares/role.middleware";
 
 const router = Router();
 
-// Admin routes
-router.post("/", createTaxConfig);
+/**
+ * Tax Configuration Routes - All administrative routes
+ */
+
+// Get active tax config - Public access (needed for payment calculations)
 router.get("/active", getActiveTaxConfig);
-router.patch("/:id", updateTaxConfig);
+
+// Create tax config - ADMIN only
+router.post("/", authenticateUserWithRole(["ADMIN"]), createTaxConfig);
+
+// Update tax config - ADMIN only
+router.patch("/:id", authenticateUserWithRole(["ADMIN"]), updateTaxConfig);
 
 export default router;

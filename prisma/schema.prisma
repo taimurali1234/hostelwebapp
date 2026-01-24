@@ -22,6 +22,8 @@ model User {
   bookings      Booking[]
   notifications Notification[]
   reviews       Review[]
+  bookingOrders BookingOrder[]
+
 }
 
 model Room {
@@ -37,6 +39,7 @@ model Room {
   stayType        BookingType  @default(LONG_TERM)
   status          RoomStatus  @default(AVAILABLE)
   bookedSeats     Int @default(0)
+  availableSeats Int @default(0)
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
   bookings        Booking[]
@@ -87,10 +90,11 @@ model Booking {
 
   status        BookingStatus @default(PENDING)
   source        BookingSource @default(WEBSITE)
+  bookingOrderId String
+  bookingOrder   BookingOrder @relation(fields: [bookingOrderId], references: [id])
 
   checkIn     DateTime
   checkOut    DateTime?
-  totalAmount Int
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   cancelledAt   DateTime?
@@ -98,6 +102,21 @@ model Booking {
   user        User          @relation(fields: [userId], references: [id])
   payment     Payment?
 }
+model BookingOrder {
+  id          String        @id @default(uuid())
+  orderNumber String        @unique
+  userId      String
+
+  status      BookingStatus @default(PENDING)
+  totalAmount Int
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  user        User          @relation(fields: [userId], references: [id])
+  bookings    Booking[]
+}
+
 model TaxConfig {
   id        String   @id @default(uuid())
   percent   Int      @default(16)
@@ -204,6 +223,7 @@ enum BookingType {
 
 enum BookingStatus {
   PENDING
+  RESERVED
   CONFIRMED
   CANCELLED
   COMPLETED

@@ -9,6 +9,7 @@ import {
   saveUserPreference,
 } from "./ai.controller";
 import authenticateUserWithRole from "../../middlewares/role.middleware";
+import authenticateUser from "../../middlewares/auth.middleware";
 
 const router = Router();
 
@@ -16,33 +17,33 @@ const router = Router();
  * AI Conversation Routes
  */
 
-// Get welcome message (public - no auth required)
+// Get welcome message - Public (no auth required)
 router.get("/welcome", getWelcomeMessage);
 
-// Send a message to AI (requires authentication)
+// Send a message to AI - Authenticated users only (USER or ADMIN)
 router.post("/message", authenticateUserWithRole(["USER", "ADMIN"]), sendMessage);
 
-// Stream messages in real-time (WebSocket-like)
+// Stream messages in real-time - Authenticated users only
 router.post("/stream", authenticateUserWithRole(["USER", "ADMIN"]), streamMessage);
 
-// Get quick predefined responses
+// Get quick predefined responses - Public access
 router.post("/quick-response", getQuickResponse);
 
-// Get personalized recommendations
+// Get personalized recommendations - Authenticated users only
 router.get(
   "/recommendations",
   authenticateUserWithRole(["USER", "ADMIN"]),
   getRecommendations
 );
 
-// Get conversation history
+// Get conversation history - Authenticated users only
 router.get(
   "/history/:conversationId",
   authenticateUserWithRole(["USER", "ADMIN"]),
   getConversationHistory
 );
 
-// Save user preference
+// Save user preference - Authenticated users only
 router.post(
   "/preference",
   authenticateUserWithRole(["USER", "ADMIN"]),

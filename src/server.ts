@@ -3,7 +3,6 @@ import app from "./app";
 import { connectRabit } from "./config/rabitmq";
 import { initSocketServer } from "./config/socket.server";
 import { startNotificationWorker } from "./modules/notifications/notification.service";
-import sendEmail from "./utils/sendEmailLink";
 
 const server = http.createServer(app);
 
@@ -17,18 +16,6 @@ const server = http.createServer(app);
     } else {
       console.warn("⚠️ Notification worker NOT started (RabbitMQ not connected)");
     }
-
-try {
-  await sendEmail(
-    process.env.EMAIL_USER!,
-    "Server Started",
-    "Email system is working!"
-  );
-  console.log("✅ Email service verified");
-} catch (err) {
-  console.warn("⚠️ Email service not ready", err);
-}
-
 
     await initSocketServer(server);
     console.log("✅ Socket server initialized");

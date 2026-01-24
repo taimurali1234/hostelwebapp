@@ -8,6 +8,7 @@ import {
 import prisma from "../../config/prismaClient";
 import { deleteFromS3 } from "../../utils/uploadToS3";
 import constants from "constants";
+import { calculateRoomSeats, validateBedsUpdate } from "../../utils/roomSeatManager";
 
 export const createRoom = async (
   req: Request,
@@ -42,18 +43,26 @@ export const createRoom = async (
       });
     }
 
-    const room = await prisma.room.create({
-      data: {
-        title,
-        type,
-        floor,
-        beds,
-        washrooms,
-        description,
-        shortTermPrice: shortTermPricing.price,
-        longTermPrice: longTermPricing.price,
-      },
-    });
+    const { availableSeats, status } = calculateRoomSeats({
+  beds,
+  bookedSeats: 0,
+});
+
+const room = await prisma.room.create({
+  data: {
+    title,
+    type,
+    floor,
+    beds,
+    bookedSeats: 0,
+    availableSeats,
+    washrooms,
+    description,
+    shortTermPrice: shortTermPricing.price,
+    longTermPrice: longTermPricing.price,
+  },
+});
+
 
     return res.status(201).json({
       success: true,
@@ -107,6 +116,7 @@ export const updateRoom = async (
       });
     }
 
+
     // Price logic: If room type changed, fetch both pricing types
     let shortTermPriceUpdate: number | undefined = undefined;
     let longTermPriceUpdate: number | undefined = undefined;
@@ -145,6 +155,23 @@ export const updateRoom = async (
       longTermPriceUpdate = longTermPricing.price;
     }
 
+    let seatUpdateData = {};
+
+if (beds !== undefined) {
+  const bookedSeats = await validateBedsUpdate(id, beds);
+
+  const seatState = calculateRoomSeats({
+    beds,
+    bookedSeats,
+  });
+
+  seatUpdateData = {
+    availableSeats: seatState.availableSeats,
+    status: seatState.status,
+  };
+}
+
+
     const room = await prisma.room.update({
       where: { id },
       data: {
@@ -154,30 +181,41 @@ export const updateRoom = async (
         beds,
         washrooms,
         description,
-        status,
+        ...seatUpdateData,
         ...(shortTermPriceUpdate !== undefined && { shortTermPrice: shortTermPriceUpdate }),
         ...(longTermPriceUpdate !== undefined && { longTermPrice: longTermPriceUpdate }),
       },
     });
+    
 
     return res.status(200).json({
       success: true,
       message: "Room updated successfully",
       data: room
     });
-  } catch (error) {
-    console.error(error);
-    if (error instanceof Error && error.message.includes("validation")) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid room data provided"
-      });
-    }
-    return res.status(500).json({
+  } catch (error: any) {
+  console.error(error);
+
+  if (error.message === "BEDS_LESS_THAN_BOOKED") {
+    return res.status(400).json({
       success: false,
-      message: "Server is currently unavailable. Please try again later."
+      message: "Cannot reduce beds below already booked seats",
     });
   }
+
+  if (error instanceof Error && error.message.includes("validation")) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid room data provided",
+    });
+  }
+
+  return res.status(500).json({
+    success: false,
+    message: "Server is currently unavailable. Please try again later.",
+  });
+}
+
 };
 
 

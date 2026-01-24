@@ -12,14 +12,22 @@ import authenticateUserWithRole from "../../middlewares/role.middleware";
 
 const router = Router();
 
-// All routes require authentication
-router.post("/", createReview);
-router.get("/", getAllReviews);
-router.patch("/:id", updateReview);
-router.delete("/:id", deleteReview);
+/**
+ * Review Routes
+ */
 
-// Public routes
+// Public routes - no authentication required
+router.get("/", getAllReviews);
 router.get("/room/:roomId", getReviewsForRoom);
 router.get("/:id", getReview);
+
+// Create review - authenticated users (USER or ADMIN)
+router.post("/", authenticateUserWithRole(["USER", "ADMIN"]), createReview);
+
+// Update review - authenticated users (should own the review)
+router.patch("/:id", authenticateUserWithRole(["USER", "ADMIN"]), updateReview);
+
+// Delete review - authenticated users or ADMIN
+router.delete("/:id", authenticateUserWithRole(["USER", "ADMIN"]), deleteReview);
 
 export default router;

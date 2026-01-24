@@ -4,9 +4,14 @@ import { getDashboardData } from "./dashboard.controllers";
 
 const router = Router();
 
+/**
+ * Dashboard Routes
+ */
+
+// Get dashboard data - ADMIN only
 router.get(
   "/",
-
+  authenticateUserWithRole(["ADMIN"]),
   getDashboardData
 );
 

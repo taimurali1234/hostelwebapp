@@ -10,11 +10,8 @@ import {
  */
 export const previewBookingSchema = z
   .object({
-    roomId: z.string().uuid("Invalid roomId"),
     price:z.number(),
-    bookingType: z.nativeEnum(BookingType).optional(),
     couponCode: z.string().min(0).optional(),
-    seatsSelected: z.number().min(1, "At least 1 seat must be selected"),
 
   })
   

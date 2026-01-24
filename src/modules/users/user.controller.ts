@@ -234,26 +234,26 @@ return res.status(400).json({ success: false, message: "Invalid credentials, Wro
     
     // Access Token (1 hour expiration)
     const accessToken = jwt.sign(
-      {
-        userId: user.id,
-        username: user.name,
-        email: user.email,
-        role: user.role,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" }
-    );
+  {
+    userId: user.id,
+    username: user.name,
+    email: user.email,
+    role: user.role,
+  },
+  process.env.JWT_SECRET!,
+  { expiresIn: "1hr" }
+);
 
     // Refresh Token (1 day expiration)
     const refreshToken = jwt.sign(
-      {
-        userId: user.id,
-        email: user.email,
-        role: user.role,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "1d" }
-    );
+  {
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+  },
+  process.env.JWT_SECRET!,
+  { expiresIn: "1d" }
+);
 
     console.log("✅ Access Token generated:", accessToken.substring(0, 20) + "...");
     console.log("✅ Refresh Token generated:", refreshToken.substring(0, 20) + "...");
@@ -263,7 +263,7 @@ return res.status(400).json({ success: false, message: "Invalid credentials, Wro
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      maxAge: 60 * 60 * 1000, // 1 hour
+      maxAge: 60 * 60 * 1000 , // 1 hour
     });
 
     // Set Refresh Token in HTTP-only cookie (1 day)
@@ -276,7 +276,6 @@ return res.status(400).json({ success: false, message: "Invalid credentials, Wro
 
     // Also store refresh token in Redis for validation (1 day)
     await redis.setex(`refreshToken:${user.id}`, 24 * 60 * 60, refreshToken);
-
     console.log("✅ Cookies set successfully");
   return res.status(200).json({ success: true, message: "You are now logged-in", data: {
     userId:user.id,
@@ -659,19 +658,14 @@ export const resetPassword = async (
 /**
  * ✅ Refresh Token - Generate new access token using refresh token
  */
-export const refreshAccessToken = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<Response | void> => {
+export const refreshAccessToken = async (req: Request, res: Response) => {
   try {
-    const { refreshToken } = req.cookies.refreshToken ? req.cookies : {};
-    const userId = req.user?.userId;
+    const refreshToken = req.cookies?.refreshToken;
+
     if (!refreshToken) {
-      return res.status(400).json({ success: false, message: "Refresh token is required" });
+      return res.status(401).json({ success: false, message: "Refresh token is required" });
     }
 
-    // Verify refresh token
     if (!process.env.JWT_SECRET) {
       throw new Error("JWT_SECRET is missing");
     }
@@ -681,16 +675,14 @@ export const refreshAccessToken = async (
       decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
     } catch (error: any) {
       if (error.name === "TokenExpiredError") {
-        // Clear cookies and return token expired error
         res.clearCookie("accessToken");
         res.clearCookie("refreshToken");
         await redis.del(`refreshToken:${error.decoded?.userId}`);
-        return res.status(400).json({ success: false, message: "Session expired. Please login again." });
+        return res.status(401).json({ success: false, message: "Session expired. Please login again." });
       }
-      return res.status(400).json({ success: false, message: "Invalid refresh token" });
+      return res.status(401).json({ success: false, message: "Invalid refresh token" });
     }
 
-    // Get user from database to fetch latest info
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
     });
@@ -699,15 +691,13 @@ export const refreshAccessToken = async (
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    // Verify refresh token in Redis
     const storedRefreshToken = await redis.get(`refreshToken:${user.id}`);
     if (!storedRefreshToken || storedRefreshToken !== refreshToken) {
       res.clearCookie("accessToken");
       res.clearCookie("refreshToken");
-      return res.status(400).json({ success: false, message: "Invalid or expired refresh token. Please login again." });
+      return res.status(401).json({ success: false, message: "Invalid or expired refresh token. Please login again." });
     }
 
-    // Generate new access token (1 hour)
     const newAccessToken = jwt.sign(
       {
         userId: user.id,
@@ -719,34 +709,25 @@ export const refreshAccessToken = async (
       { expiresIn: "1h" }
     );
 
-    console.log("✅ New Access Token generated:", newAccessToken.substring(0, 20) + "...");
-
-    // Set new Access Token in HTTP-only cookie
     res.cookie("accessToken", newAccessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: process.env.NODE_ENV === "production" ? "strict" : "lax",
-      maxAge: 60 * 60 * 1000, // 1 hour
+      maxAge: 60 * 60 * 1000,
     });
-
-    console.log("✅ New access token cookie set successfully");
 
     return res.status(200).json({
       success: true,
       message: "Access token refreshed successfully",
-      data: {
-        userId: user.id,
-        expiresIn: 3600, // 1 hour in seconds
-      }
+      data: { userId: user.id, expiresIn: 3600 },
     });
+
   } catch (error) {
     console.error("Refresh token error:", error);
-    if (error instanceof Error) {
-      return res.status(400).json({ success: false, message: error.message });
-    }
     return res.status(500).json({ success: false, message: "Failed to refresh token" });
   }
 };
+
 
 /**
  * ✅ Logout - Clear tokens and end session
