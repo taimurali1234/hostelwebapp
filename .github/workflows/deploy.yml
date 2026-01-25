@@ -9,6 +9,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -18,11 +21,14 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install dependencies
+      - name: Install dependencies (for Prisma)
         run: npm install
 
       - name: Prisma generate
         run: npx prisma generate
+
+      - name: Prisma migrate deploy
+        run: npx prisma migrate deploy
 
       - name: Copy files to EC2
         uses: appleboy/scp-action@v0.1.7
@@ -45,7 +51,7 @@ jobs:
           key: ${{ secrets.EC2_KEY }}
           script: |
             cd /home/ubuntu/hostelwebapp
-            npm install
+            npm install 
             npx prisma generate
             pm2 restart hostel-backend || pm2 start npm --name hostel-backend -- run start
             pm2 save
