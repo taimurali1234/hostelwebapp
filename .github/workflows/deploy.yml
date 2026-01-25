@@ -9,28 +9,42 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
-    env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-
     steps:
+      # 1️⃣ Checkout code
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 2️⃣ Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
+      # 3️⃣ Install dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # 4️⃣ Build TypeScript → JavaScript
+      - name: Build project
+        run: npm run build
+
+      # 5️⃣ Copy build + prisma to EC2
       - name: Copy files to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          source: "."
+          source: |
+            dist
+            prisma
+            package.json
+            package-lock.json
           target: /home/ubuntu/hostelwebapp
+          rm: true
 
-      - name: Restart app on EC2
+      # 6️⃣ Install prod deps, run prisma, restart app
+      - name: Install deps, migrate DB & restart app
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -38,8 +52,17 @@ jobs:
           key: ${{ secrets.EC2_KEY }}
           script: |
             cd /home/ubuntu/hostelwebapp
-            npm install 
+
+            echo "Installing production dependencies..."
+            npm install --omit=dev
+
+            echo "Running Prisma generate..."
             npx prisma generate
+
+            echo "Running Prisma migrate..."
             npx prisma migrate deploy
-            pm2 restart hostel-backend || pm2 start npm --name hostel-backend -- run start
+
+            echo "Restarting app with PM2..."
+            pm2 delete hostel-backend || true
+            pm2 start dist/server.js --name hostel-backend
             pm2 save
