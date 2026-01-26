@@ -32,14 +32,21 @@ jobs:
       - name: Build project
         run: npm run build
       # 🔍 DEBUG (remove later)
-      - name: Verify build output
+      - name: HARD DEBUG – check workspace & dist
         run: |
-         echo "Current dir:"
+         echo "PWD:"
          pwd
-         echo "List root:"
+         echo "Workspace root:"
          ls -la
-         echo "List dist:"
-         ls -la dist || echo "❌ dist not found"  
+         echo "Check dist:"
+         if [ -d "dist" ]; then 
+          echo "✅ dist exists"
+          ls -la dist 
+         else
+          echo "❌ dist DOES NOT exist"
+         fi
+          echo "Find dist anywhere:" 
+          find . -maxdepth 3 -type d -name dist
 
       # 5️⃣ Copy build + prisma to EC2
       - name: Copy files to EC2
