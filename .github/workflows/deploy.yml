@@ -31,6 +31,15 @@ jobs:
       # 4️⃣ Build TypeScript → JavaScript
       - name: Build project
         run: npm run build
+      # 🔍 DEBUG (remove later)
+      - name: Verify build output
+        run: |
+         echo "Current dir:"
+         pwd
+         echo "List root:"
+         ls -la
+         echo "List dist:"
+         ls -la dist || echo "❌ dist not found"  
 
       # 5️⃣ Copy build + prisma to EC2
       - name: Copy files to EC2
@@ -40,12 +49,11 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           source: |
-            dist
-            prisma
+            dist/**
+            prisma/**
             package.json
             package-lock.json
           target: /home/ubuntu/hostelwebapp
-          rm: true
 
       # 6️⃣ Install prod deps, run prisma, restart app
       - name: Install deps, migrate DB & restart app
