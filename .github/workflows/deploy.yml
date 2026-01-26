@@ -23,6 +23,8 @@ jobs:
       # 3️⃣ Install dependencies
       - name: Install dependencies
         run: npm install
+      - name: Generate Prisma Client
+        run: npx prisma generate
 
       # 4️⃣ Build TypeScript → JavaScript
       - name: Build project
