@@ -7,4 +7,5 @@ dev.db
 /.idea/
 coverage/
 *.md
+.tsbuildinfo
 

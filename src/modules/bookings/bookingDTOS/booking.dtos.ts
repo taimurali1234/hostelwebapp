@@ -10,13 +10,9 @@ import {
  */
 export const previewBookingSchema = z
   .object({
-    price:z.number(),
+    price: z.number(),
     couponCode: z.string().min(0).optional(),
-
-  })
-  
-
-
+  });
 
 export const createBookingSchema = z
   .object({
@@ -25,7 +21,7 @@ export const createBookingSchema = z
 
     bookingType: z.nativeEnum(BookingType),
 
-    checkIn: z.string("Check-in date is required"),
+    checkIn: z.string().min(1, "Check-in date is required"),
 
     checkOut: z.string().optional(),
 
@@ -38,7 +34,7 @@ export const createBookingSchema = z
     totalAmount: z.number().min(0, "Total amount must be >= 0"),
 
     source: z.nativeEnum(BookingSource).optional(),
-  })
+  });
  
 
 /**

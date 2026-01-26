@@ -4,6 +4,15 @@ import { BookingType, BookingStatus } from "@prisma/client";
 import { createBookingDTO, createBookingSchema, previewBookingDTO, previewBookingSchema, updateBookingDTO, updateBookingSchema } from "./bookingDTOS/booking.dtos";
 import { syncRoomSeats } from "../../utils/SeatManager";
 
+/**
+ * Helper function to generate order number
+ */
+const generateOrderNumber = async (tx: any) => {
+  const count = await tx.bookingOrder.count();
+  const year = new Date().getFullYear();
+  return `ORD-${year}-${String(count + 1).padStart(6, "0")}`;
+};
+
 
 
 
@@ -211,12 +220,6 @@ export const createMultipleBookings = async (req: Request, res: Response) => {
     if (!Array.isArray(bookings) || bookings.length === 0) {
       return res.status(400).json({ success: false, message: "Bookings required" });
     }
-    const generateOrderNumber = async (tx: any) => {
-  const count = await tx.bookingOrder.count();
-  const year = new Date().getFullYear();
-  return `ORD-${year}-${String(count + 1).padStart(6, "0")}`;
-};
-
 
     const result = await prisma.$transaction(async (tx) => {
       const orderNumber = await generateOrderNumber(tx);
@@ -327,6 +330,17 @@ export const createBooking = async (
     } = parsedData;
 
     const booking = await prisma.$transaction(async (tx) => {
+      // Create booking order first
+      const orderNumber = await generateOrderNumber(tx);
+      const order = await tx.bookingOrder.create({
+        data: {
+          userId,
+          orderNumber,
+          totalAmount,
+          status: "PENDING",
+        },
+      });
+
       // Fetch room
       const room = await tx.room.findUnique({
         where: { id: roomId },
@@ -357,9 +371,9 @@ export const createBooking = async (
           taxAmount,
           discount,
           seatsSelected,
-          totalAmount,
           source,
           status: "PENDING",
+          bookingOrderId: order.id,
         },
       });
 
@@ -367,7 +381,7 @@ export const createBooking = async (
     });
 
     if ("error" in booking) {
-      const statusCode = booking.status;
+      const statusCode = booking.status as number;
       const messages: Record<string, string> = {
         ROOM_NOT_FOUND: "Room not found",
         ROOM_NOT_AVAILABLE: "Room is not available for booking",
@@ -376,7 +390,7 @@ export const createBooking = async (
       };
       return res.status(statusCode).json({
         success: false,
-        message: messages[booking.error] || "Booking creation failed"
+        message: messages[(booking as any).error] || "Booking creation failed"
       });
     }
 
@@ -399,8 +413,6 @@ export const createBooking = async (
     });
   }
 };
-
-
 
 export const updateBooking = async (
   req: Request,
@@ -1008,4 +1020,3 @@ export const updateOrder = async (req: Request, res: Response) => {
     });
   }
 };
-

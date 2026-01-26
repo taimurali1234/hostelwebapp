@@ -4,7 +4,7 @@
  */
 
 import { HumanMessage, BaseMessage } from "@langchain/core/messages";
-import { conversationGraph, generateWelcomeMessage, ConversationState } from "./langgraph.flow";
+import { processMessage, generateWelcomeMessage} from "./langgraph.flow";
 import { speechHandler } from "./speech.handler";
 import prisma from "../../config/prismaClient";
 
@@ -124,22 +124,11 @@ export class AIService {
         new HumanMessage(userMessage),
       ];
 
-      // Create state for the graph
-      const state = {
-        messages,
-        userId,
-        userName: user.name,
-        userEmail: user.email,
-        roomPreferences: {},
-        context: `User ${user.name} is interacting with HostelZilla AI`,
-      };
+      // Run the conversation
+      const aiMessage = await processMessage(messages);
 
-      // Run the conversation graph
-      const result = await conversationGraph.invoke(state);
-
-      // Extract the last message (AI response)
-      const lastMessage = result.messages[result.messages.length - 1];
-      const aiResponse = lastMessage.content as string;
+      // Extract the AI response
+      const aiResponse = aiMessage.content as string;
 
       // Generate audio if requested
       let audioData;

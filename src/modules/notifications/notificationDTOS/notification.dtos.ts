@@ -7,7 +7,9 @@ import { z } from "zod";
    ========================= */
 
 export const createNotificationSchema = z.object({
-    audience: z.nativeEnum(NotificationAudience," Invalid audience").optional(),
+    audience: z.nativeEnum(NotificationAudience, {
+      errorMap: () => ({ message: "Invalid audience" }),
+    }).optional(),
 
     userId: z
       .string()
