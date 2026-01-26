@@ -69,7 +69,7 @@ jobs:
             cd /home/ubuntu/hostelwebapp
 
             echo "Installing production dependencies..."
-            npm install --omit=dev
+            npm install 
 
             echo "Running Prisma generate..."
             npx prisma generate
@@ -79,5 +79,5 @@ jobs:
 
             echo "Restarting app with PM2..."
             pm2 delete hostel-backend || true
-            pm2 start dist/server.js --name hostel-backend
+            pm2 reload hostel-backend || pm2 start dist/server.js --name hostel-backend
             pm2 save
