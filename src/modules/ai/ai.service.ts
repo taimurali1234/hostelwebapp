@@ -320,7 +320,6 @@ export class AIService {
           title: true,
           type: true,
           beds: true,
-          price: true,
           floor: true,
         },
         take: 5,

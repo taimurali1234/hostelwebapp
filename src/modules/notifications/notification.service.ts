@@ -14,6 +14,10 @@ export const startNotificationWorker = async () => {
     const parsedData: CreateNotificationDTO = createNotificationSchema.parse(data);
     console.log(parsedData)
     const { userId, title, audience, message } = parsedData;
+    if (!audience) {
+  throw new Error("Audience is required");
+}
+
 
     const notification = await prisma.notification.create({
       data: { userId, title, audience, message, isRead: false },

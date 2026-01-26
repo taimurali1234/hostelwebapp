@@ -144,8 +144,12 @@ export const createNotification = async (req: Request, res: Response, next: Next
 
     // 🔎 Check user existence (only for USER audience)
     if (audience === NotificationAudience.USER) {
+       if (!userId) {
+  throw new Error("User ID is required");
+}
       const userExists = await prisma.user.findUnique({
-        where: { id: userId },
+       
+        where: { id: userId},
         select: { id: true },
       });
 

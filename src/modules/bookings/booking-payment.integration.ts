@@ -40,6 +40,7 @@ export const createBookingAndInitiatePayment = async (
     // Create booking first
     const booking = await prisma.booking.create({
       data: {
+        bookingOrderId: `BOOKING-${Date.now()}`,
         userId,
         roomId: bookingData.roomId,
         seatsSelected: bookingData.seatsSelected,
@@ -49,7 +50,6 @@ export const createBookingAndInitiatePayment = async (
         baseAmount: bookingData.baseAmount,
         taxAmount: bookingData.taxAmount,
         discount: bookingData.discount,
-        totalAmount: bookingData.totalAmount,
         source: bookingData.source,
         status: BookingStatus.PENDING,
       },
@@ -196,7 +196,7 @@ export const cancelBookingWithRefund = async (
       // Call refund function from payment service
       // Example: await PaymentService.refundPayment(booking.payment.transactionId, booking.totalAmount);
       console.log(
-        `Refund initiated for booking ${bookingId}: ${booking.totalAmount}`
+        `Refund initiated for booking ${bookingId}: ${booking.baseAmount}`
       );
     }
 

@@ -55,7 +55,7 @@ export const initiatePayment = async (
     // Initiate payment
     const paymentResponse = await PaymentService.initiatePayment({
       bookingId,
-      amount: booking.totalAmount,
+      amount: booking.baseAmount,
       paymentMethod: paymentMethod as PaymentMethod,
       returnUrl,
       phoneNumber,

@@ -77,6 +77,7 @@ export const createBookingWithPayment = async (
       // 2. Create the booking
       const newBooking = await tx.booking.create({
         data: {
+          bookingOrderId: `BOOKING-${Date.now()}`,
           userId,
           roomId: parsedData.roomId,
           bookingType: parsedData.bookingType,
@@ -86,7 +87,6 @@ export const createBookingWithPayment = async (
           taxAmount: parsedData.taxAmount,
           discount: parsedData.discount,
           seatsSelected: parsedData.seatsSelected,
-          totalAmount: parsedData.totalAmount,
           source: parsedData.source || "WEBSITE",
           status: "PENDING",
         },
@@ -112,7 +112,7 @@ export const createBookingWithPayment = async (
     // 4. Initiate payment (outside transaction for better error handling)
     const paymentResponse = await PaymentService.initiatePayment({
       bookingId: booking.id,
-      amount: booking.totalAmount,
+      amount: booking.baseAmount,
       paymentMethod: parsedData.paymentMethod,
       phoneNumber: parsedData.phoneNumber,
       returnUrl: parsedData.returnUrl,
@@ -171,7 +171,6 @@ export const getBookingWithPaymentDetails = async (
             beds: true,
             bookedSeats: true,
             status: true,
-            price: true,
           },
         },
         user: {
@@ -301,7 +300,7 @@ export const cancelBookingWithRefund = async (
       // In production, call refund function from payment service
       // Example: await PaymentService.processRefund(booking.payment.transactionId, booking.totalAmount);
       console.log(
-        `Refund initiated for booking ${id}: Amount ${booking.totalAmount}`
+        `Refund initiated for booking ${id}: Amount ${booking.baseAmount}`
       );
     }
 
@@ -312,7 +311,7 @@ export const cancelBookingWithRefund = async (
         booking: result,
         refund: booking.payment?.paymentStatus === "SUCCESS" ? {
           status: "PROCESSING",
-          amount: booking.totalAmount,
+          amount: booking.baseAmount,
           transactionId: booking.payment.transactionId,
         } : null,
       }

@@ -40,7 +40,7 @@ export const getDashboardData = async (
     // 4️⃣ Total Revenue (from bookings)
     const revenueAgg = await prisma.booking.aggregate({
       _sum: {
-        totalAmount: true, // 🔴 must exist in Booking
+        baseAmount: true, // 🔴 must exist in Booking
       },
       where: {
         status: BookingStatus.PENDING,
@@ -110,7 +110,7 @@ const bookingOverview = Object.entries(monthlyMap)
         todayBookedRooms,
         pendingRooms,
         availableRooms,
-        totalRevenue: revenueAgg._sum.totalAmount || 0,
+        totalRevenue: revenueAgg._sum.baseAmount || 0,
       },
 
       roomsByType,
