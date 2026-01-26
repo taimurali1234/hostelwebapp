@@ -78,6 +78,5 @@ jobs:
             npx prisma migrate deploy
 
             echo "Restarting app with PM2..."
-            pm2 delete hostel-backend || true
             pm2 reload hostel-backend || pm2 start dist/server.js --name hostel-backend
             pm2 save
