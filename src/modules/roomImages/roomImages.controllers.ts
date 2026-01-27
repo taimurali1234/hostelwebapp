@@ -19,6 +19,7 @@ export const uploadImage = async (
   try {
     const { roomId } = req.body;
     const files = req.files as Express.Multer.File[];
+    console.log(req.files);
 
     if (!roomId) return sendBadRequest(res, "roomId is required");
     if (!files || files.length === 0)
