@@ -55,7 +55,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          source: dist/**,prisma/**,package.json,package-lock.json
+          source: dist/**,prisma/**,prisma.config.ts,package.json,package-lock.json
           target: /home/ubuntu/hostelwebapp
 
       # 6️⃣ Install prod deps, run prisma, restart app
