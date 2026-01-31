@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from "express";
 import prisma from "../../config/prismaClient";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/ApiError";
+import { logger } from "../../utils/logger";
 
 export const uploadImage = asyncHandler(
   async (

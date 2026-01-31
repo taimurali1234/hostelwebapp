@@ -1,6 +1,8 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import morgan from "morgan";
+import { logger } from "./utils/logger";
 import authRoutes from "./modules/users/user.routes"
 import roomRoutes from "./modules/rooms/room.routes"
 import roomImageRoutes from "./modules/roomImages/roomImages.routes"
@@ -30,9 +32,27 @@ app.use(
   })
 );
 
-   
+/**
+ * 📊 MORGAN HTTP REQUEST LOGGING
+ * Logs all HTTP requests with method, path, status code, and duration
+ */
+app.use(
+  morgan((tokens, req, res) => {
+    const method = tokens.method(req, res);
+    const url = tokens.url(req, res);
+    const status = tokens.status(req, res);
+    const responseTime = tokens["response-time"](req, res);
 
+    // Extract user info from JWT if available
+    const user = (req as any).user;
+    const userInfo = user ? `${user.email} (${user.role})` : "Anonymous";
 
+    // Use global logger
+    logger.http(method || "GET", url || "/", parseInt(status || "500"), parseFloat(responseTime || "0"), userInfo);
+
+    return null; // Don't use Morgan's default output
+  })
+);
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 app.use("/api/users",authRoutes)

@@ -3,6 +3,7 @@ import { NextFunction, Request, Response } from "express";
 import multer from "multer";
 import { ZodError } from "zod";
 import { ApiError } from "../utils/ApiError";
+import { logger } from "../utils/logger";
 
 export const errorHandler = (err: unknown, req: Request, res: Response, next: NextFunction) => {
   let statusCode = 500;
@@ -14,6 +15,7 @@ export const errorHandler = (err: unknown, req: Request, res: Response, next: Ne
     statusCode = err.statusCode;
     message = err.message;
     errors = err.errors;
+    logger.warn(`API Error: ${message}`, { statusCode, path: req.path, method: req.method });
   }
   // ZodError - Validation errors
   else if (err instanceof ZodError) {
@@ -23,6 +25,7 @@ export const errorHandler = (err: unknown, req: Request, res: Response, next: Ne
       field: err.path.join("."),
       message: err.message,
     }));
+    logger.warn(`Validation Error: ${message}`, { path: req.path, fieldCount: errors.length });
   }
   // Prisma errors
   else if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -39,6 +42,7 @@ export const errorHandler = (err: unknown, req: Request, res: Response, next: Ne
         statusCode = 400;
         message = "Database error";
     }
+    logger.error(`Prisma Error [${err.code}]: ${message}`, err);
   }
   // Multer errors - File upload errors
   else if (err instanceof multer.MulterError) {
@@ -49,10 +53,14 @@ export const errorHandler = (err: unknown, req: Request, res: Response, next: Ne
       statusCode = 400;
       message = "Each image must be less than 5MB";
     }
+    logger.warn(`File Upload Error: ${message}`, { code: err.code });
   }
   // Default error handling for unknown errors
   else if (err instanceof Error) {
     message = err.message;
+    logger.error(`Unexpected Error: ${message}`, err);
+  } else {
+    logger.error(`Unknown Error Type`, undefined, { errorType: typeof err });
   }
 
   const response = {

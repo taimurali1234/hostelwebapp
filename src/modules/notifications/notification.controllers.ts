@@ -4,6 +4,7 @@ import { NotificationAudience } from "@prisma/client";
 import { io } from "../../config/socket.server";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/ApiError";
+import { logger } from "../../utils/logger";
 
 /**
  * ✅ FETCH NOTIFICATIONS WITH PER-USER READ STATE

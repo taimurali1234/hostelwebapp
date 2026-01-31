@@ -3,6 +3,7 @@ import prisma from "../../config/prismaClient";
 import { BookingStatus, RoomStatus } from "@prisma/client";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/ApiError";
+import { logger } from "../../utils/logger";
 
 export const getDashboardData = asyncHandler(
   async (

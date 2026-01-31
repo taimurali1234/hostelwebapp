@@ -71,11 +71,13 @@ jobs:
             echo "Installing production dependencies..."
             npm install 
 
+            echo "Running Prisma migrate..."
+            npx prisma migrate deploy
+
             echo "Running Prisma generate..."
             npx prisma generate
 
-            echo "Running Prisma migrate..."
-            npx prisma migrate deploy
+            
 
             echo "Restarting app with PM2..."
             pm2 reload hostel-backend || pm2 start dist/server.js --name hostel-backend

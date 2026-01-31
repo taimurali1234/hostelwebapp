@@ -5,6 +5,7 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import redis from "../../config/redis";
 import sendEmail from "../../utils/sendEmailLink";
+import { logger } from "../../utils/logger";
 
 import { Role } from "@prisma/client";
 import { publishToQueue } from "../../config/rabitmq";
@@ -22,6 +23,8 @@ export const registerUser = asyncHandler(async (
 ): Promise<void> => {
   const { name, email, password, phone, address } = req.body;
 
+  logger.debug("User registration attempt", { email, name });
+
   let role: Role = "USER";
 
   // 🔐 Role decision BEFORE DB
@@ -36,6 +39,7 @@ export const registerUser = asyncHandler(async (
   });
 
   if (existingUser) {
+    logger.warn("Registration failed - Email already exists", { email });
     throw new ApiError(400, "Email already registered");
   }
 
@@ -53,8 +57,11 @@ export const registerUser = asyncHandler(async (
     },
   });
 
+  logger.info("User created successfully", { userId: user.id, email: user.email, role: user.role });
+
   // Generate JWT Token
   if (!process.env.JWT_SECRET) {
+    logger.error("JWT_SECRET is missing", "JWT configuration error");
     throw new ApiError(500, "JWT_SECRET is missing");
   }
 
@@ -91,6 +98,8 @@ const verificationLink = `${req.protocol}://${req.get(
        <p>Click the button below to verify your account:</p>
        <a href="${verificationLink}" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Verify Email</a>`
     );
+
+      logger.success("Verification email sent", { email });
 
       res.status(201).json({
         success: true,

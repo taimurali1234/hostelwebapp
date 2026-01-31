@@ -6,6 +6,7 @@ import {
 } from "./taxconfigDTOS/taxconfig.dtos";
 import prisma from "../../../config/prismaClient";
 import { sendCreated, sendNotFound, sendOK } from "../../../utils/response";
+import { logger } from "../../../utils/logger";
 import { nextToken } from "aws-sdk/clients/iotfleetwise";
 import { networkInterfaces } from "os";
 

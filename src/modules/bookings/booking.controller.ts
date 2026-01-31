@@ -5,6 +5,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/ApiError";
 import { syncRoomSeats } from "../../utils/SeatManager";
 import { publishToQueue } from "../../config/rabitmq";
+import { logger } from "../../utils/logger";
 
 /**
  * Helper function to generate order number

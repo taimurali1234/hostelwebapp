@@ -7,6 +7,7 @@ import {
 } from "./RoomDTOS/room.dtos";
 import prisma from "../../config/prismaClient";
 import { deleteFromS3 } from "../../utils/uploadToS3";
+import { logger } from "../../utils/logger";
 import constants from "constants";
 import { calculateRoomSeats, validateBedsUpdate } from "../../utils/roomSeatManager";
 import { asyncHandler } from "../../utils/asyncHandler";

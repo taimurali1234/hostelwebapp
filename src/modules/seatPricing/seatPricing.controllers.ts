@@ -2,6 +2,7 @@ import { NextFunction, Request, Response } from "express";
 import prisma from "../../config/prismaClient";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/ApiError";
+import { logger } from "../../utils/logger";
 
 export const createSeatPricing = asyncHandler(
   async (req: Request, res: Response, next: NextFunction): Promise<void> => {
