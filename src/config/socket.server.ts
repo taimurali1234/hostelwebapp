@@ -30,10 +30,12 @@ export const initSocketServer = (httpServer: http.Server) => {
         return next(new Error("No cookies found"));
       }
 
-      const { token } = cookie.parse(cookies);
+      // ✅ Read accessToken from cookies (primary for socket connections)
+      const { accessToken, refreshToken } = cookie.parse(cookies);
+      const token = accessToken || refreshToken;
 
       if (!token) {
-        return next(new Error("Token not provided"));
+        return next(new Error("Token not provided in cookies"));
       }
 
       const decoded = jwt.verify(
@@ -45,8 +47,9 @@ export const initSocketServer = (httpServer: http.Server) => {
       socket.token = token;
 
       next();
-    } catch (error) {
-      next(new Error("Invalid token"));
+    } catch (error: any) {
+      console.error("❌ Socket authentication error:", error.message);
+      next(new Error("Invalid or expired token"));
     }
   });
 
@@ -56,21 +59,27 @@ export const initSocketServer = (httpServer: http.Server) => {
   io.on("connection", (socket: AuthenticatedSocket) => {
     const { userId, role } = socket.user!;
 
+    console.log(`✅ User connected: ${userId} (${role})`);
+    console.log(`📊 Total connected sockets: ${io.engine.clientsCount}`);
+
     /* =========================
        🏠 PERSONAL ROOM
        ========================= */
     socket.join(userId);
+    console.log(`🏠 Joined personal room: ${userId}`);
 
     /* =========================
        👥 ALL USERS ROOM
        ========================= */
     socket.join("users");
+    console.log(`👥 Joined users room`);
 
     /* =========================
        🛡 ADMIN ROOM
        ========================= */
-    if (role === "ADMIN") {
+    if (role === "ADMIN" || role === "COORDINATOR") {
       socket.join("admins");
+      console.log(`🛡 Joined admins room`);
     }
 
     /* =========================
@@ -81,6 +90,14 @@ export const initSocketServer = (httpServer: http.Server) => {
     });
 
     socket.on("disconnect", () => {
+      console.log(`👋 User disconnected: ${userId}`);
+    });
+
+    /* =========================
+       🚨 ERROR HANDLING
+       ========================= */
+    socket.on("error", (error) => {
+      console.error(`❌ Socket error for user ${userId}:`, error);
     });
   });
 };

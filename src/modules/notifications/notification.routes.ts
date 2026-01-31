@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createNotification, deleteNotification, getMyNotifications, markAsRead } from "./notification.controllers";
+import { createNotification, deleteNotification, getMyNotifications, markAllAsRead, markAsRead } from "./notification.controllers";
 import authenticateUserWithRole from "../../middlewares/role.middleware";
 import authenticateUser from "../../middlewares/auth.middleware";
 
@@ -16,6 +16,11 @@ router.post("/", authenticateUserWithRole(["ADMIN"]), createNotification);
 router.get("/", authenticateUser, getMyNotifications);
 
 // Mark as read - authenticated users only
+router.patch(
+  "/read-all",
+  authenticateUser,
+  markAllAsRead
+);
 router.patch("/:id/read", authenticateUser, markAsRead);
 
 // Delete notification - ADMIN only

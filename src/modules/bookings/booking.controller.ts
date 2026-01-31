@@ -1,8 +1,10 @@
 import { NextFunction, Request, Response } from "express";
 import  prisma  from "../../config/prismaClient";
 import { BookingType, BookingStatus } from "@prisma/client";
-import { createBookingDTO, createBookingSchema, previewBookingDTO, previewBookingSchema, updateBookingDTO, updateBookingSchema } from "./bookingDTOS/booking.dtos";
+import { asyncHandler } from "../../utils/asyncHandler";
+import { ApiError } from "../../utils/ApiError";
 import { syncRoomSeats } from "../../utils/SeatManager";
+import { publishToQueue } from "../../config/rabitmq";
 
 /**
  * Helper function to generate order number
@@ -21,41 +23,120 @@ const generateOrderNumber = async (tx: any) => {
  * Calculate booking amount before creating booking
  */
 
-export const getBookingOrderDetails = async (req: Request, res: Response) => {
-  const { orderId } = req.params;
+export const getBookingOrderDetails = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const { orderId } = req.params;
+    const userId = req.user?.userId;
 
-  const order = await prisma.bookingOrder.findUnique({
-    where: { id: orderId },
-    include: {
-      bookings: {
-        include: {
-          room: {
-            include: {
-              images: true,
-              videos: true,
+    if (!userId) {
+      throw new ApiError(401, "Unauthorized - User ID not found");
+    }
+
+    const order = await prisma.bookingOrder.findUnique({
+      where: { id: orderId },
+      include: {
+        bookings: {
+          include: {
+            room: {
+              include: {
+                images: true,
+                videos: true,
+              },
             },
           },
         },
+        user: true,
       },
-      user: true,
-    },
-  });
+    });
 
-  if (!order) {
-    return res.status(404).json({
-      success: false,
-      message: "Order not found",
+    if (!order) {
+      throw new ApiError(404, "Order not found");
+    }
+
+    // Verify that the order belongs to the logged-in user
+    if (order.userId !== userId) {
+      throw new ApiError(403, "Forbidden - You do not have access to this order");
+    }
+
+    res.status(200).json({
+      success: true,
+      data: order,
     });
   }
+);
 
-  return res.status(200).json({
-    success: true,
-    data: order,
-  });
-};
+export const getUserOrders = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const userId = req.user?.userId;
+    const {
+      search = "",
+      status = "",
+      page = "1",
+      limit = "10",
+    } = req.query as Record<string, string>;
 
-export const getAllOrders = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+    if (!userId) {
+      throw new ApiError(401, "Unauthorized - User ID not found");
+    }
+
+    const pageNumber = Math.max(Number(page), 1);
+    const pageSize = Math.max(Number(limit), 1);
+    const skip = (pageNumber - 1) * pageSize;
+
+    // WHERE CLAUSE - Filter by userId and optional filters
+    const where: any = {
+      userId, // Only get orders belonging to logged-in user
+    };
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (search) {
+      where.orderNumber = { contains: search, mode: "insensitive" };
+    }
+
+    // DB QUERIES (PARALLEL)
+    const [orders, total] = await Promise.all([
+      prisma.bookingOrder.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { createdAt: "desc" },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+          bookings: {
+            select: {
+              id: true,
+            },
+          },
+        },
+      }),
+
+      prisma.bookingOrder.count({ where }),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      message: "Your orders fetched successfully",
+      data: {
+        items: orders,
+        total,
+        page: pageNumber,
+        limit: pageSize,
+      },
+    });
+  }
+);
+
+export const getAllOrders = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const {
       search = "",
       status = "",
@@ -116,7 +197,7 @@ export const getAllOrders = async (req: Request, res: Response, next: NextFuncti
       prisma.bookingOrder.count({ where }),
     ]);
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Orders fetched successfully",
       data: {
@@ -126,22 +207,11 @@ export const getAllOrders = async (req: Request, res: Response, next: NextFuncti
         limit: pageSize,
       },
     });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later.",
-    });
   }
-};
-export const previewBooking = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const parsedData: previewBookingDTO = previewBookingSchema.parse(req.body);
-    console.log("Preview booking data:", parsedData);
-    const {
-      price,
-      couponCode,
-    } = parsedData;
+);
+export const previewBooking = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const { price, couponCode } = req.body;
 
     const baseAmount = price;
     
@@ -175,14 +245,12 @@ export const previewBooking = async (req: Request, res: Response, next: NextFunc
 
         totalAmount = totalAmount - couponDiscount;
         couponApplied = true;
+      } else {
+        throw new ApiError(400, "This Coupon no more exist or is invalid");
       }
-      else {        return res.status(400).json({
-          success: false,
-          message: "This Coupon no more exist or is invalid"
-        });
-      }
-    } 
-    return res.status(200).json({
+    }
+    
+    res.status(200).json({
       success: true,
       message: "Booking preview calculated successfully",
       data: {
@@ -194,36 +262,24 @@ export const previewBooking = async (req: Request, res: Response, next: NextFunc
         totalAmount,
       }
     });
-  } catch (error) {
-    console.error(error);
-    if (error instanceof Error && error.message.includes("validation")) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid booking preview data provided"
-      });
-    }
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later."
-    });
   }
-};
+);
 
-export const createMultipleBookings = async (req: Request, res: Response) => {
-  try {
+export const createMultipleBookings = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const userId = req.user?.userId;
+    const userRole = req.user?.role;
     if (!userId) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
+      throw new ApiError(401, "Unauthorized");
     }
 
-    const { bookings,totalAmount } = req.body;
+    const { bookings, totalAmount } = req.body;
     if (!Array.isArray(bookings) || bookings.length === 0) {
-      return res.status(400).json({ success: false, message: "Bookings required" });
+      throw new ApiError(400, "Bookings required");
     }
 
     const result = await prisma.$transaction(async (tx) => {
       const orderNumber = await generateOrderNumber(tx);
-
 
       // 🟢 CREATE ORDER
       const order = await tx.bookingOrder.create({
@@ -276,8 +332,17 @@ export const createMultipleBookings = async (req: Request, res: Response) => {
 
       return { order, bookings: createdBookings };
     });
+    await publishToQueue("ORDER.CREATED", {
+  userId,
+  userRole,
+  title: "Order Created",
+  audience: "USER",
+  severity: "SUCCESS",
+  message: `Your order ${result.order.orderNumber} has been created successfully.`,
 
-    return res.status(201).json({
+});
+
+    res.status(201).json({
       success: true,
       message: "Order created successfully",
       data: {
@@ -286,35 +351,19 @@ export const createMultipleBookings = async (req: Request, res: Response) => {
         bookingIds: result.bookings.map(b => b.id),
       },
     });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Unable to create booking order",
-    });
   }
-};
+);
 
 
 
 
-export const createBooking = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
+export const createBooking = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const userId = req.user?.userId;
 
     if (!userId) {
-      return res.status(401).json({
-        success: false,
-        message: "You are not authenticated"
-      });
+      throw new ApiError(401, "You are not authenticated");
     }
-
-    // Validate request body
-    const parsedData: createBookingDTO = createBookingSchema.parse(req.body);
 
     const {
       roomId,
@@ -327,7 +376,7 @@ export const createBooking = async (
       seatsSelected,
       totalAmount,
       source,
-    } = parsedData;
+    } = req.body;
 
     const booking = await prisma.$transaction(async (tx) => {
       // Create booking order first
@@ -352,12 +401,12 @@ export const createBooking = async (
         },
       });
 
-      if (!room) return { error: "ROOM_NOT_FOUND", status: 404 };
-      if (room.status !== "AVAILABLE") return { error: "ROOM_NOT_AVAILABLE", status: 400 };
+      if (!room) throw new Error("ROOM_NOT_FOUND");
+      if (room.status !== "AVAILABLE") throw new Error("ROOM_NOT_AVAILABLE");
 
       const availableSeats = room.beds - room.bookedSeats;
-      if (availableSeats === 0) return { error: "ROOM_FULL", status: 400 };
-      if (availableSeats < seatsSelected) return { error: "INSUFFICIENT_SEATS", status: 400 };
+      if (availableSeats === 0) throw new Error("ROOM_FULL");
+      if (availableSeats < seatsSelected) throw new Error("INSUFFICIENT_SEATS");
 
       // Create booking
       const newBooking = await tx.booking.create({
@@ -380,45 +429,16 @@ export const createBooking = async (
       return newBooking;
     });
 
-    if ("error" in booking) {
-      const statusCode = booking.status as number;
-      const messages: Record<string, string> = {
-        ROOM_NOT_FOUND: "Room not found",
-        ROOM_NOT_AVAILABLE: "Room is not available for booking",
-        ROOM_FULL: "This room is completely booked",
-        INSUFFICIENT_SEATS: "Not enough seats available in this room",
-      };
-      return res.status(statusCode).json({
-        success: false,
-        message: messages[(booking as any).error] || "Booking creation failed"
-      });
-    }
-
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
       message: "Booking created successfully",
       data: booking
     });
-  } catch (error) {
-    console.error(error);
-    if (error instanceof Error && error.message.includes("validation")) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid booking data provided"
-      });
-    }
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later."
-    });
   }
-};
+);
 
-export const updateBooking = async (
-  req: Request,
-  res: Response
-) => {
-  try {
+export const updateBooking = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
     const user = req.user;
 
@@ -426,38 +446,28 @@ export const updateBooking = async (
     const booking = await prisma.booking.findUnique({
       where: { id },
     });
-    console.log("Fetched booking:", booking);
 
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found",
-      });
+      throw new ApiError(404, "Booking not found");
     }
 
     /* ---------- USER Restrictions ---------- */
     if (user?.role === "USER") {
       if (booking.userId !== user.userId) {
-        return res.status(403).json({
-          success: false,
-          message: "You cannot update someone else's booking",
-        });
+        throw new ApiError(403, "You cannot update someone else's booking");
       }
 
-     if (
-  booking.status === "CONFIRMED" ||
-  booking.status === "COMPLETED"
-) {
-  if (
-    booking.status &&
-    ["PENDING", "RESERVED"].includes(booking.status)
-  ) {
-    return res.status(400).json({
-      success: false,
-      message: "Confirmed booking cannot go back to pending or reserved",
-    });
-  }
-}
+      if (
+        booking.status === "CONFIRMED" ||
+        booking.status === "COMPLETED"
+      ) {
+        if (
+          booking.status &&
+          ["PENDING", "RESERVED"].includes(booking.status)
+        ) {
+          throw new ApiError(400, "Confirmed booking cannot go back to pending or reserved");
+        }
+      }
 
       const forbiddenFields = [
         "baseAmount",
@@ -468,39 +478,30 @@ export const updateBooking = async (
       ];
 
       if (forbiddenFields.some(f => req.body[f] !== undefined)) {
-        return res.status(403).json({
-          success: false,
-          message: "You are not allowed to update pricing or status",
-        });
+        throw new ApiError(403, "You are not allowed to update pricing or status");
       }
     }
 
     /* ---------- Validate Body ---------- */
-    const parsedData = updateBookingSchema.parse(req.body);
+    const parsedData = req.body;
 
     if (
-  booking.status === "CONFIRMED" ||
-  booking.status === "COMPLETED"
-) {
-  if (
-    parsedData.status &&
-    ["PENDING", "RESERVED"].includes(parsedData.status)
-  ) {
-    return res.status(400).json({
-      success: false,
-      message: "Confirmed booking cannot go back to pending or reserved",
-    });
-  }
-}
+      booking.status === "CONFIRMED" ||
+      booking.status === "COMPLETED"
+    ) {
+      if (
+        parsedData.status &&
+        ["PENDING", "RESERVED"].includes(parsedData.status)
+      ) {
+        throw new ApiError(400, "Confirmed booking cannot go back to pending or reserved");
+      }
+    }
 
     if (
       parsedData.bookingType === BookingType.SHORT_TERM &&
       !parsedData.checkOut
     ) {
-      return res.status(400).json({
-        success: false,
-        message: "Checkout date is required for short-term bookings",
-      });
+      throw new ApiError(400, "Checkout date is required for short-term bookings");
     }
 
     if (parsedData.bookingType === BookingType.LONG_TERM) {
@@ -511,17 +512,16 @@ export const updateBooking = async (
     const updatedBooking = await prisma.$transaction(async (tx) => {
       const newStatus = parsedData.status ?? booking.status;
       if (
-  booking.status === "CONFIRMED" ||
-  booking.status === "COMPLETED"
-) {
-  if (
-    parsedData.seatsSelected &&
-    parsedData.seatsSelected !== booking.seatsSelected
-  ) {
-    throw new Error("SEATS_CANNOT_BE_CHANGED_AFTER_CONFIRM");
-  }
-}
-
+        booking.status === "CONFIRMED" ||
+        booking.status === "COMPLETED"
+      ) {
+        if (
+          parsedData.seatsSelected &&
+          parsedData.seatsSelected !== booking.seatsSelected
+        ) {
+          throw new Error("SEATS_CANNOT_BE_CHANGED_AFTER_CONFIRM");
+        }
+      }
 
       // 🧠 Seat handling (centralized)
       if (parsedData.status) {
@@ -551,53 +551,18 @@ export const updateBooking = async (
       });
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Booking updated successfully",
       data: updatedBooking,
     });
-  } catch (error: any) {
-    console.error(error);
-
-    if (error.message === "ROOM_NOT_FOUND") {
-      return res.status(404).json({
-        success: false,
-        message: "Room not found",
-      });
-    }
-    if (error.message === "SEATS_CANNOT_BE_CHANGED_AFTER_CONFIRM") {
-  return res.status(400).json({
-    success: false,
-    message: "Seats cannot be changed after booking is confirmed",
-  });
-}
-
-    if (error.message === "ALL_SEATS_BOOKED") {
-      return res.status(400).json({
-        success: false,
-        message:
-          "All seats are currently booked. Please wait for seats to be released.",
-      });
-    }
-
-    if (error instanceof Error && error.message.includes("validation")) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid booking data provided",
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later.",
-    });
   }
-};
+);
 
 
 
-export const getSingleBooking = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const getSingleBooking = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
 
     const booking = await prisma.booking.findUnique({
@@ -610,28 +575,19 @@ export const getSingleBooking = async (req: Request, res: Response, next: NextFu
     });
 
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found"
-      });
+      throw new ApiError(404, "Booking not found");
     }
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Booking fetched successfully",
       data: booking
     });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later."
-    });
   }
-};
+);
 
-export const getAllBookings = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const getAllBookings = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const {
       search = "",
       status = "",
@@ -713,7 +669,7 @@ export const getAllBookings = async (req: Request, res: Response, next: NextFunc
       prisma.booking.count({ where }),
     ]);
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Bookings fetched successfully",
       data: {
@@ -723,18 +679,12 @@ export const getAllBookings = async (req: Request, res: Response, next: NextFunc
         limit: pageSize,
       }
     });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later."
-    });
   }
-};
+);
 
 
-export const deleteBooking = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const deleteBooking = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
     const user = req.user;
 
@@ -743,26 +693,17 @@ export const deleteBooking = async (req: Request, res: Response, next: NextFunct
     });
 
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found"
-      });
+      throw new ApiError(404, "Booking not found");
     }
 
     // USER restriction
     if (user && user.role === "USER") {
       if (booking.userId !== user.userId) {
-        return res.status(403).json({
-          success: false,
-          message: "You cannot delete someone else's booking"
-        });
+        throw new ApiError(403, "You cannot delete someone else's booking");
       }
 
       if (!["PENDING", "RESERVED"].includes(booking.status)) {
-        return res.status(400).json({
-          success: false,
-          message: "Confirmed bookings cannot be deleted"
-        });
+        throw new ApiError(400, "Confirmed bookings cannot be deleted");
       }
     }
 
@@ -783,25 +724,15 @@ export const deleteBooking = async (req: Request, res: Response, next: NextFunct
       });
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Booking deleted successfully"
     });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later."
-    });
   }
-};
+);
 
-/**
- * DELETE /orders/:orderId
- * Delete a booking order
- */
-export const deleteOrder = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const deleteOrder = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { orderId } = req.params;
     const user = req.user;
 
@@ -811,59 +742,46 @@ export const deleteOrder = async (req: Request, res: Response, next: NextFunctio
         bookings: true,
       },
     });
-console
+
     if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
+      throw new ApiError(404, "Order not found");
     }
 
     // USER restriction - users can only delete their own orders
     if (user && user.role === "USER") {
       if (order.userId !== user.userId) {
-        return res.status(403).json({
-          success: false,
-          message: "You cannot delete someone else's order",
-        });
+        throw new ApiError(403, "You cannot delete someone else's order");
       }
 
       // Users can only delete PENDING or RESERVED orders
       if (!["PENDING", "RESERVED"].includes(order.status)) {
-        return res.status(400).json({
-          success: false,
-          message: "Only pending or reserved orders can be deleted",
-        });
+        throw new ApiError(400, "Only pending or reserved orders can be deleted");
       }
     }
-    if (order.status !== "CANCELLED") {
-  return res.status(400).json({
-    success: false,
-    message: "Order must be cancelled before deletion",
-  });
-}
 
+    if (order.status !== "CANCELLED") {
+      throw new ApiError(400, "Order must be cancelled before deletion");
+    }
 
     // Delete order and associated bookings in a transaction
     await prisma.$transaction(async (tx) => {
       // Release seats for each booking in the order
-     for (const booking of order.bookings) {
-  const wasConfirmed =
-    booking.status === "CONFIRMED" ||
-    booking.status === "COMPLETED";
+      for (const booking of order.bookings) {
+        const wasConfirmed =
+          booking.status === "CONFIRMED" ||
+          booking.status === "COMPLETED";
 
-  if (!wasConfirmed) continue; // 🔥 IMPORTANT
+        if (!wasConfirmed) continue; // 🔥 IMPORTANT
 
-  await tx.room.update({
-    where: { id: booking.roomId },
-    data: {
-      bookedSeats: { decrement: booking.seatsSelected },
-      availableSeats: { increment: booking.seatsSelected },
-      status: "AVAILABLE",
-    },
-  });
-}
-
+        await tx.room.update({
+          where: { id: booking.roomId },
+          data: {
+            bookedSeats: { decrement: booking.seatsSelected },
+            availableSeats: { increment: booking.seatsSelected },
+            status: "AVAILABLE",
+          },
+        });
+      }
 
       // Delete all bookings in the order
       await tx.booking.deleteMany({
@@ -876,30 +794,18 @@ console
       });
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Order deleted successfully",
     });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later.",
-    });
   }
-};
+);
 
-/**
- * PATCH /orders/:orderId
- * Update a booking order status
- */
-
-export const updateOrder = async (req: Request, res: Response) => {
-  try {
+export const updateOrder = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { orderId } = req.params;
     const { status } = req.body;
     const user = req.user;
-    console.log("Update order status to:", status); 
 
     /* ---------- Validate Status ---------- */
     const validStatuses: BookingStatus[] = [
@@ -911,10 +817,7 @@ export const updateOrder = async (req: Request, res: Response) => {
     ];
 
     if (!status || !validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid status. Valid statuses are: ${validStatuses.join(", ")}`,
-      });
+      throw new ApiError(400, `Invalid status. Valid statuses are: ${validStatuses.join(", ")}`);
     }
 
     /* ---------- Fetch Order ---------- */
@@ -929,51 +832,41 @@ export const updateOrder = async (req: Request, res: Response) => {
     });
 
     if (!order) {
-      return res.status(404).json({
-        success: false,
-        message: "Order not found",
-      });
+      throw new ApiError(404, "Order not found");
     }
-    if (
-  order.status === "CONFIRMED" &&
-  ["PENDING", "RESERVED"].includes(status)
-) {
-  return res.status(400).json({
-    success: false,
-    message: "Confirmed order cannot be reverted to pending or reserved",
-  });
-}
 
+    if (
+      order.status === "CONFIRMED" &&
+      ["PENDING", "RESERVED"].includes(status)
+    ) {
+      throw new ApiError(400, "Confirmed order cannot be reverted to pending or reserved");
+    }
 
     /* ---------- USER Restrictions ---------- */
     if (user?.role === "USER" && order.userId !== user.userId) {
-      return res.status(403).json({
-        success: false,
-        message: "You cannot update someone else's order",
-      });
+      throw new ApiError(403, "You cannot update someone else's order");
     }
 
     /* ---------- Transaction ---------- */
     const updatedOrder = await prisma.$transaction(async (tx) => {
       /* ---- Sync seats for each booking ---- */
       for (const booking of order.bookings) {
-  await syncRoomSeats({
-    tx,
-    roomId: booking.roomId,
-    seats: booking.seatsSelected,
-    previousStatus: booking.status,
-    newStatus: status,
-  });
+        await syncRoomSeats({
+          tx,
+          roomId: booking.roomId,
+          seats: booking.seatsSelected,
+          previousStatus: booking.status,
+          newStatus: status,
+        });
 
-  await tx.booking.update({
-    where: { id: booking.id },
-    data: {
-      status,
-      cancelledAt: status === "CANCELLED" ? new Date() : null,
-    },
-  });
-}
-
+        await tx.booking.update({
+          where: { id: booking.id },
+          data: {
+            status,
+            cancelledAt: status === "CANCELLED" ? new Date() : null,
+          },
+        });
+      }
 
       /* ---- Update Order ---- */
       return tx.bookingOrder.update({
@@ -991,32 +884,10 @@ export const updateOrder = async (req: Request, res: Response) => {
       });
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Order updated successfully",
       data: updatedOrder,
     });
-  } catch (error: any) {
-    console.error(error);
-
-    if (error.message === "ROOM_NOT_FOUND") {
-      return res.status(404).json({
-        success: false,
-        message: "Room not found",
-      });
-    }
-
-    if (error.message === "ALL_SEATS_BOOKED") {
-      return res.status(400).json({
-        success: false,
-        message:
-          "All seats are currently booked. Please wait for seats to be released.",
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later.",
-    });
   }
-};
+);

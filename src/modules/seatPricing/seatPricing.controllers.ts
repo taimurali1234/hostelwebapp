@@ -1,23 +1,13 @@
 import { NextFunction, Request, Response } from "express";
-import {
-  
-  createseatPricingDTO,
-  createseatPricingSchema,
-  updateseatPricingDTO,
-  updateseatPricingSchema,
-  
-} from "./seatPricingDTOS/seatPricing.dtos";
 import prisma from "../../config/prismaClient";
-import { tr } from "zod/v4/locales";
+import { asyncHandler } from "../../utils/asyncHandler";
+import { ApiError } from "../../utils/ApiError";
 
-export const createSeatPricing = async (req: Request, res: Response) => {
-  try {
-    const parsedData = createseatPricingSchema.parse(req.body);
-    const { roomType, stayType, price, isActive } = parsedData;
+export const createSeatPricing = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const { roomType, stayType, price, isActive } = req.body;
 
     const result = await prisma.$transaction(async (tx) => {
-      
-      // 1. Deactivate old pricing of same type
       await tx.seatPricing.updateMany({
         where: {
           roomType,
@@ -27,7 +17,6 @@ export const createSeatPricing = async (req: Request, res: Response) => {
         data: { isActive: false },
       });
 
-      // 2. Create new pricing
       const newPricing = await tx.seatPricing.create({
         data: {
           roomType,
@@ -37,7 +26,6 @@ export const createSeatPricing = async (req: Request, res: Response) => {
         },
       });
 
-      // 3. Update all rooms
       const updateData =
         stayType === "SHORT_TERM"
           ? { shortTermPrice: price }
@@ -51,27 +39,26 @@ export const createSeatPricing = async (req: Request, res: Response) => {
       return newPricing;
     });
 
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
       message: "Seat pricing created and rooms updated",
       data: result,
     });
-
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Failed to create seat pricing",
-    });
   }
-};
+);
 
 
-// Get all SeatPricings
-export const getAllSeatPricing = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { roomType, stayType, isActive, page = "1", limit = "10", sort = "createdAt_desc" } = req.query;
+export const getAllSeatPricing = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const {
+      roomType,
+      stayType,
+      isActive,
+      page = "1",
+      limit = "10",
+      sort = "createdAt_desc",
+    } = req.query;
 
-    // Build where clause
     const where: any = {};
 
     if (roomType) {
@@ -86,12 +73,10 @@ export const getAllSeatPricing = async (req: Request, res: Response, next: NextF
       where.isActive = isActive === "true";
     }
 
-    // Parse pagination
     const pageNum = Math.max(1, Number(page) || 1);
     const limitNum = Math.min(100, Math.max(1, Number(limit) || 10));
     const skip = (pageNum - 1) * limitNum;
 
-    // Parse sort
     const orderBy: any = {};
     if (sort) {
       const [field, direction] = (sort as string).split("_");
@@ -100,10 +85,8 @@ export const getAllSeatPricing = async (req: Request, res: Response, next: NextF
       orderBy.createdAt = "desc";
     }
 
-    // Get total count
     const total = await prisma.seatPricing.count({ where });
 
-    // Get paginated results
     const seatPricings = await prisma.seatPricing.findMany({
       where,
       orderBy,
@@ -111,28 +94,21 @@ export const getAllSeatPricing = async (req: Request, res: Response, next: NextF
       take: limitNum,
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Seat pricings fetched successfully",
       data: {
-          seatPricings,
-          page: pageNum,
-          limit: limitNum,
-          total,
-      }
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later."
+        seatPricings,
+        page: pageNum,
+        limit: limitNum,
+        total,
+      },
     });
   }
-};
+);
 
-// Get single SeatPricing by ID
-export const getSeatPricingById = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const getSeatPricingById = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
 
     const seatPricing = await prisma.seatPricing.findUnique({
@@ -140,33 +116,21 @@ export const getSeatPricingById = async (req: Request, res: Response, next: Next
     });
 
     if (!seatPricing) {
-      return res.status(404).json({
-        success: false,
-        message: "Seat pricing not found"
-      });
+      throw new ApiError(404, "Seat pricing not found");
     }
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Seat pricing fetched successfully",
-      data: seatPricing
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later."
+      data: seatPricing,
     });
   }
-};
+);
 
-// Update SeatPricing
-export const updateSeatPricing = async (req: Request, res: Response) => {
-  try {
+export const updateSeatPricing = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
-
-    const parsedData = updateseatPricingSchema.parse(req.body);
-    const { price, isActive, stayType } = parsedData;
+    const { price, isActive, stayType } = req.body;
 
     const updated = await prisma.$transaction(async (tx) => {
       const seatPricing = await tx.seatPricing.findUnique({
@@ -174,10 +138,9 @@ export const updateSeatPricing = async (req: Request, res: Response) => {
       });
 
       if (!seatPricing) {
-        throw new Error("SeatPricing not found");
+        throw new ApiError(404, "Seat pricing not found");
       }
 
-      // 1. Deactivate other active pricing (if activating this one)
       if (isActive) {
         await tx.seatPricing.updateMany({
           where: {
@@ -190,7 +153,6 @@ export const updateSeatPricing = async (req: Request, res: Response) => {
         });
       }
 
-      // 2. Update room prices
       const updateData =
         stayType === "SHORT_TERM"
           ? { shortTermPrice: price }
@@ -201,7 +163,6 @@ export const updateSeatPricing = async (req: Request, res: Response) => {
         data: updateData,
       });
 
-      // 3. Update seat pricing
       return await tx.seatPricing.update({
         where: { id },
         data: {
@@ -211,32 +172,16 @@ export const updateSeatPricing = async (req: Request, res: Response) => {
       });
     });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
       message: "Seat pricing updated and rooms synced",
       data: updated,
     });
-
-  } catch (error) {
-    console.error(error);
-
-    if (error instanceof Error && error.message.includes("SeatPricing not found")) {
-      return res.status(404).json({
-        success: false,
-        message: "Seat pricing not found",
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later.",
-    });
   }
-};
+);
 
-// Delete SeatPricing
-export const deleteSeatPricing = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const deleteSeatPricing = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
 
     const seatPricing = await prisma.seatPricing.findUnique({
@@ -244,25 +189,16 @@ export const deleteSeatPricing = async (req: Request, res: Response, next: NextF
     });
 
     if (!seatPricing) {
-      return res.status(404).json({
-        success: false,
-        message: "Seat pricing not found"
-      });
+      throw new ApiError(404, "Seat pricing not found");
     }
 
     await prisma.seatPricing.delete({ where: { id } });
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
-      message: "Seat pricing deleted successfully"
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({
-      success: false,
-      message: "Server is currently unavailable. Please try again later."
+      message: "Seat pricing deleted successfully",
     });
   }
-};
+);
 
 

@@ -2,44 +2,78 @@ import { NextFunction, Request, Response } from "express";
 import prisma from "../../config/prismaClient";
 import { NotificationAudience } from "@prisma/client";
 import { io } from "../../config/socket.server";
-import { CreateNotificationDTO, createNotificationSchema } from "./notificationDTOS/notification.dtos";
-import { sendUnauthorized, sendBadRequest, sendError, sendOK, sendNotFound, sendCreated } from "../../utils/response";
+import { asyncHandler } from "../../utils/asyncHandler";
+import { ApiError } from "../../utils/ApiError";
 
 /**
- * ✅ USER: Get my notifications
- * (USER + ALL_USERS)
+ * ✅ FETCH NOTIFICATIONS WITH PER-USER READ STATE
+ * 
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │ AUDIENCE RULES:                                                 │
+ * ├─────────────────────────────────────────────────────────────────┤
+ * │ USER:      Only visible to that specific user                   │
+ * │ ALL_USERS: Visible to ALL users (regular users + admin)         │
+ * │ ADMIN:     Only visible to ADMIN/COORDINATOR roles              │
+ * └─────────────────────────────────────────────────────────────────┘
+ * 
+ * For ADMIN/COORDINATOR: Returns ALL_USERS + ADMIN notifications
+ * For REGULAR USER: Returns ALL_USERS + own USER notifications
  */
-export const getMyNotifications = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const getMyNotifications = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
     const userId = req.user?.userId;
-    console.log("Authenticated userId:", userId);
+    const role = req.user?.role;
 
     if (!userId) {
-      return sendUnauthorized(res, "You are not authenticated yet");
+      throw new ApiError(401, "You are not authenticated yet");
     }
 
-    // Get query parameters for filtering and pagination
+    // Pagination
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const skip = (page - 1) * limit;
+
+    // Filters
     const search = (req.query.search as string) || "";
-    const audience = (req.query.audience as string) || "";
-    const severity = (req.query.severity as string) || "";
-    const read = (req.query.read as string) || "";
+    const audience = req.query.audience as NotificationAudience | undefined;
+    const severity = req.query.severity as string | undefined;
+    const read = req.query.read as string | undefined;
 
-    // Build where clause
-    let where: any = {};
+    /**
+     * =========================
+     * BUILD WHERE CLAUSE
+     * =========================
+     */
+    let notificationWhere: any;
 
-    if (audience) {
-      where.audience = audience;
+    if (role === "ADMIN" || role === "COORDINATOR") {
+      // ✅ ADMIN/COORDINATOR: Only ALL_USERS and ADMIN notifications (NOT user-specific)
+      notificationWhere = {
+        OR: [
+          { audience: NotificationAudience.ALL_USERS },
+          { audience: NotificationAudience.ADMIN },
+        ],
+      };
+    } else {
+      // ✅ REGULAR USER: Only ALL_USERS and USER-specific notifications
+      notificationWhere = {
+        OR: [
+          { audience: NotificationAudience.ALL_USERS },
+          { audience: NotificationAudience.USER, userId: userId },
+        ],
+      };
     }
-    
-    // Add search filter
+
+    // Apply audience filter if provided
+    if (audience) {
+      notificationWhere.AND = notificationWhere.AND || [];
+      notificationWhere.AND.push({ audience });
+    }
+
+    // Apply search filter
     if (search) {
-      if (!where.OR) {
-        where.OR = [];
-      }
-      where.OR.push({
+      notificationWhere.AND = notificationWhere.AND || [];
+      notificationWhere.AND.push({
         OR: [
           { title: { contains: search, mode: "insensitive" } },
           { message: { contains: search, mode: "insensitive" } },
@@ -47,91 +81,163 @@ export const getMyNotifications = async (req: Request, res: Response, next: Next
       });
     }
 
-   
-    // Add severity filter
-    if (severity && severity !== "") {
-      where.severity = severity;
+    // Apply severity filter
+    if (severity) {
+      notificationWhere.AND = notificationWhere.AND || [];
+      notificationWhere.AND.push({ severity });
     }
 
-    // Add read filter
-    if (read === "true") {
-      where.isRead = true;
-    } else if (read === "false") {
-      where.isRead = false;
-    }
+    /**
+     * =========================
+     * FETCH NOTIFICATIONS WITH READ STATE
+     * =========================
+     */
+    const total = await prisma.notification.count({ where: notificationWhere });
 
-    // Get total count
-    const total = await prisma.notification.count({ where });
-
-    // Get paginated notifications
     const notifications = await prisma.notification.findMany({
-      where,
+      where: notificationWhere,
+      include: {
+        // ✅ Get THIS user's read/unread state
+        userNotifications: {
+          where: { userId },
+          select: {
+            isRead: true,
+            readAt: true,
+            createdAt: true,
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
       skip,
       take: limit,
     });
 
-    return sendOK(res, "Notifications fetched successfully", {
-      notifications,
-      total,
-      page,
-      limit,
+    /**
+     * =========================
+     * TRANSFORM RESPONSE
+     * =========================
+     */
+    const transformedNotifications = notifications.map((notif) => {
+      const userNotif = notif.userNotifications[0]; // Should always be 0 or 1
+
+      return {
+        id: notif.id,
+        title: notif.title,
+        message: notif.message,
+        severity: notif.severity,
+        audience: notif.audience,
+        userId: notif.userId,
+        createdAt: notif.createdAt,
+        updatedAt: notif.updatedAt,
+        // ✅ Per-user read state
+        isRead: userNotif?.isRead ?? false,
+        readAt: userNotif?.readAt ?? null,
+      };
     });
-  } catch (error) {
-    console.error("Get my notifications error:", error);
-    if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+
+    // ✅ Apply read filter AFTER fetching (since it's in UserNotification)
+    let filtered = transformedNotifications;
+    if (read === "true") {
+      filtered = filtered.filter((n) => n.isRead === true);
+    } else if (read === "false") {
+      filtered = filtered.filter((n) => n.isRead === false);
     }
-    return sendError(res, 500, "Failed to fetch notifications");
+
+    res.status(200).json({
+      success: true,
+      message: "Notifications fetched successfully",
+      data: {
+        notifications: filtered,
+        total: filtered.length,
+        page,
+        limit,
+      },
+    });
   }
-};
+);
 
 /**
- * ✅ USER: Mark notification as read
+ * ✅ MARK SINGLE NOTIFICATION AS READ (PER USER)
  */
-export const markAsRead = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const markAsRead = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
+    const userId = req.user?.userId;
 
-    const notification = await prisma.notification.update({
-      where: { id },
-      data: { isRead: true },
+    if (!userId) {
+      throw new ApiError(401, "Unauthorized");
+    }
+
+    // ✅ Update ONLY this user's read state
+    const userNotification = await prisma.userNotification.updateMany({
+      where: {
+        notificationId: id,
+        userId: userId,
+      },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
     });
 
-    return sendOK(res, "Notification marked as read", notification);
-  } catch (error) {
-    console.error("Mark as read error:", error);
-    if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
+    if (userNotification.count === 0) {
+      throw new ApiError(404, "Notification not found for this user");
     }
-    return sendError(res, 500, "Failed to mark notification as read");
+
+    res.status(200).json({
+      success: true,
+      message: "Notification marked as read",
+      data: userNotification,
+    });
   }
-};
+);
 
 /**
- * ✅ ADMIN: Create notification
+ * ✅ MARK ALL NOTIFICATIONS AS READ (ONLY FOR CURRENT USER)
  */
+export const markAllAsRead = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const userId = req.user?.userId;
 
-
-export const createNotification = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    console.log("Request body:", req.body);
-    const parsedData = createNotificationSchema.safeParse(req.body);
-
-    if (!parsedData.success) {
-      // 🔥 Return proper errors
-      return sendBadRequest(res, "Validation failed", parsedData.error.flatten().fieldErrors as Record<string, string[]>);
-    }
-    const { audience, userId, title, message, severity } = parsedData.data;
-
-    // 🔒 Basic validation
-    if (!audience || !message) {
-      return sendBadRequest(res, "audience and message are required");
+    if (!userId) {
+      throw new ApiError(401, "Unauthorized");
     }
 
+    // ✅ Mark ONLY current user's unread notifications as read
+    // Works for ALL roles: ADMIN, COORDINATOR, USER
+    const whereClause = {
+      AND: [
+        { isRead: false },
+        { userId: userId },  // ✅ Key: Filter by current user
+      ],
+    };
+
+    const updated = await prisma.userNotification.updateMany({
+      where: whereClause,
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `${updated.count} notifications marked as read (only for you)`,
+      data: { count: updated.count },
+    });
+  }
+);
+
+/**
+ * ✅ ADMIN/COORDINATOR: Create notification
+ */
+export const createNotification = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const { audience, userId, title, message, severity } = req.body;
+console.log("Creating notification with data:", req.body);
     // 👤 USER → userId required
     if (audience === NotificationAudience.USER && !userId) {
-      return sendBadRequest(res, "userId is required when audience is USER");
+      throw new ApiError(400, "userId is required when audience is USER");
     }
 
     // 🚫 ADMIN / ALL_USERS → userId not allowed
@@ -139,26 +245,29 @@ export const createNotification = async (req: Request, res: Response, next: Next
       audience !== NotificationAudience.USER &&
       userId
     ) {
-      return sendBadRequest(res, "userId is only allowed when audience is USER");
+      throw new ApiError(400, "userId is only allowed when audience is USER");
     }
 
     // 🔎 Check user existence (only for USER audience)
     if (audience === NotificationAudience.USER) {
-       if (!userId) {
-  throw new Error("User ID is required");
-}
+      if (!userId) {
+        throw new ApiError(400, "User ID is required");
+      }
       const userExists = await prisma.user.findUnique({
-       
-        where: { id: userId},
+        where: { id: userId },
         select: { id: true },
       });
 
       if (!userExists) {
-        return sendNotFound(res, "User not found");
+        throw new ApiError(404, "User not found");
       }
     }
 
-    // 💾 Create notification
+    /**
+     * =========================
+     * CREATE NOTIFICATION
+     * =========================
+     */
     const notification = await prisma.notification.create({
       data: {
         audience,
@@ -169,66 +278,123 @@ export const createNotification = async (req: Request, res: Response, next: Next
       },
     });
 
-    // 🔔 SOCKET EMIT (after successful DB write)
+
+    /**
+     * =========================
+     * CREATE USER-NOTIFICATION RECORD(S)
+     * =========================
+     */
+    if (audience === NotificationAudience.USER && userId) {
+      // ✅ USER notification: Create for specific user
+      await prisma.userNotification.create({
+        data: {
+          userId,
+          notificationId: notification.id,
+          isRead: false,
+        },
+      });
+    } else if (audience === NotificationAudience.ALL_USERS) {
+      // ✅ ALL_USERS notification: Create for ALL registered users
+      const allUsers = await prisma.user.findMany({
+        select: { id: true },
+      });
+
+      await prisma.userNotification.createMany({
+        data: allUsers.map((user) => ({
+          userId: user.id,
+          notificationId: notification.id,
+          isRead: false,
+        })),
+      });
+    } else if (audience === NotificationAudience.ADMIN) {
+      // ✅ ADMIN notification: Create for all ADMIN/COORDINATOR users
+      const admins = await prisma.user.findMany({
+        where: { role: { in: ["ADMIN", "COORDINATOR"] } },
+        select: { id: true },
+      });
+
+      await prisma.userNotification.createMany({
+        data: admins.map((admin) => ({
+          userId: admin.id,
+          notificationId: notification.id,
+          isRead: false,
+        })),
+      });
+    }
+
+    /**
+     * =========================
+     * SOCKET EMIT (REAL-TIME)
+     * =========================
+     */
     switch (audience) {
       case NotificationAudience.ALL_USERS:
-        io.to("users").emit("notification:new", notification);
+        // ✅ ALL_USERS: Broadcast to ALL connected clients
+        // Using io.emit() prevents duplicate delivery to admins in multiple rooms
+        console.log(`🔔 Broadcasting to all connected clients`);
+        io.emit("notification:new", notification);
         break;
 
       case NotificationAudience.ADMIN:
+        // ✅ ADMIN: Emit only to admins room
+        console.log(`🔔 Emitting to admins room`);
         io.to("admins").emit("notification:new", notification);
         break;
 
       case NotificationAudience.USER:
-        if (!userId) {
-          // Safety net (should never happen)
-          break;
+        // ✅ USER: Emit only to that specific user
+        console.log(`🔔 Emitting to user: ${userId}`);
+        if (userId) {
+          io.to(userId).emit("notification:new", notification);
         }
-        io.to(userId).emit("notification:new", notification);
         break;
     }
 
-    return sendCreated(res, "Notification created successfully", notification);
-  } catch (error) {
-    console.error("Create notification error:", error);
-    if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
-    }
-    return sendError(res, 500, "Failed to create notification");
+    res.status(201).json({
+      success: true,
+      message: "Notification created successfully",
+      data: notification,
+    });
   }
-};
-
+);
 
 /**
- * ✅ ADMIN: Get all notifications
+ * ✅ ADMIN: Get all notifications (global view)
  */
-export const getAllNotifications = async (_req: Request, res: Response, next: NextFunction) => {
-  try {
+export const getAllNotifications = asyncHandler(
+  async (_req: Request, res: Response, next: NextFunction): Promise<void> => {
     const notifications = await prisma.notification.findMany({
-      select: { user: true },
+      include: {
+        user: true,
+        userNotifications: {
+          select: {
+            userId: true,
+            isRead: true,
+            readAt: true,
+          },
+        },
+      },
       orderBy: { createdAt: "desc" },
     });
 
-    return sendOK(res, "Notifications fetched successfully", notifications);
-  } catch (error) {
-    console.error("Get all notifications error:", error);
-    if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
-    }
-    return sendError(res, 500, "Failed to fetch notifications");
+    res.status(200).json({
+      success: true,
+      message: "Notifications fetched successfully",
+      data: notifications,
+    });
   }
-};
+);
 
 /**
  * ✅ ADMIN: Update notification
  */
-export const updateNotification = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const updateNotification = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
     const { title, message, severity } = req.body;
 
     if (!message) {
-      return sendBadRequest(res, "Message is required");
+      throw new ApiError(400, "Message is required");
     }
 
     const notification = await prisma.notification.update({
@@ -236,33 +402,30 @@ export const updateNotification = async (req: Request, res: Response, next: Next
       data: { title, message, severity },
     });
 
-    return sendOK(res, "Notification updated successfully", notification);
-  } catch (error) {
-    console.error("Update notification error:", error);
-    if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
-    }
-    return sendError(res, 500, "Failed to update notification");
+    res.status(200).json({
+      success: true,
+      message: "Notification updated successfully",
+      data: notification,
+    });
   }
-};
+);
 
 /**
  * ✅ ADMIN: Delete notification
  */
-export const deleteNotification = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const deleteNotification = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
 
+    // ✅ CASCADE: Deletes all UserNotification records automatically
     await prisma.notification.delete({
       where: { id },
     });
 
-    return sendOK(res, "Notification deleted successfully");
-  } catch (error) {
-    console.error("Delete notification error:", error);
-    if (error instanceof Error) {
-      return sendBadRequest(res, error.message);
-    }
-    return sendError(res, 500, "Failed to delete notification");
+    res.status(200).json({
+      success: true,
+      message: "Notification deleted successfully",
+      data: null,
+    });
   }
-};
+);

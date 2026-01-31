@@ -1,62 +1,67 @@
 import { Prisma } from "@prisma/client";
-import { NextFunction,Request,Response } from "express";
+import { NextFunction, Request, Response } from "express";
 import multer from "multer";
 import { ZodError } from "zod";
+import { ApiError } from "../utils/ApiError";
 
-export const errorHandler = (err:unknown, req:Request, res:Response, next:NextFunction) => {
-  // Zod
-  if (err instanceof ZodError) {
-  return res.status(400).json({
-    success: false,
-    message: err.issues[0]?.message || "Validation failed",
-    errors: err.flatten().fieldErrors,
-  });
-}
-  // Prisma
-  if (err instanceof Prisma.PrismaClientKnownRequestError) {
+export const errorHandler = (err: unknown, req: Request, res: Response, next: NextFunction) => {
+  let statusCode = 500;
+  let message = "Internal Server Error";
+  let errors: any[] = [];
+
+  // ApiError - Custom application errors
+  if (err instanceof ApiError) {
+    statusCode = err.statusCode;
+    message = err.message;
+    errors = err.errors;
+  }
+  // ZodError - Validation errors
+  else if (err instanceof ZodError) {
+    statusCode = 400;
+    message = "Validation Failed";
+    errors = err.errors.map((err) => ({
+      field: err.path.join("."),
+      message: err.message,
+    }));
+  }
+  // Prisma errors
+  else if (err instanceof Prisma.PrismaClientKnownRequestError) {
     switch (err.code) {
       case "P2002":
-        return res.status(409).json({ 
-          success: false,
-          message: "Duplicate entry" 
-        });
+        statusCode = 409;
+        message = "Duplicate entry";
+        break;
       case "P2025":
-        return res.status(404).json({ 
-          success: false,
-          message: "Record not found" 
-        });
+        statusCode = 404;
+        message = "Record not found";
+        break;
+      default:
+        statusCode = 400;
+        message = "Database error";
     }
   }
-
-  // Custom app errors
-  // if (err instanceof AppError) {
-  //   return res.status(err.statusCode).json({
-  //     success: false,
-  //     message: err.message,
-  //   });
-  // }
-if (err instanceof multer.MulterError) {
-    // Too many files
+  // Multer errors - File upload errors
+  else if (err instanceof multer.MulterError) {
     if (err.code === "LIMIT_UNEXPECTED_FILE") {
-      return res.status(400).json({
-        success: false,
-        message: "You can upload maximum 5 images only",
-      });
-    }
-
-    // File size limit
-    if (err.code === "LIMIT_FILE_SIZE") {
-      return res.status(400).json({
-        success: false,
-        message: "Each image must be less than 5MB",
-      });
+      statusCode = 400;
+      message = "You can upload maximum 5 images only";
+    } else if (err.code === "LIMIT_FILE_SIZE") {
+      statusCode = 400;
+      message = "Each image must be less than 5MB";
     }
   }
+  // Default error handling for unknown errors
+  else if (err instanceof Error) {
+    message = err.message;
+  }
 
-  // Fallback
-  return res.status(500).json({
+  const response = {
     success: false,
-    message: "Internal server error",
-  });
+    message,
+    errors,
+    ...(process.env.NODE_ENV === "development" ? { stack: err instanceof Error ? err.stack : "" } : {}), // Security: Production mein stack hide rakhein
+  };
+
+  res.status(statusCode).json(response);
 };
 

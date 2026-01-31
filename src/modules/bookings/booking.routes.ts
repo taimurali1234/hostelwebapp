@@ -9,6 +9,7 @@ import {
   createMultipleBookings,
   getBookingOrderDetails,
   getAllOrders,
+  getUserOrders,
   deleteOrder,
   updateOrder,
 } from "./booking.controller";
@@ -23,7 +24,7 @@ const router = Router();
 
 // Create booking - requires USER or ADMIN role
 router.post("/", authenticateUserWithRole(["USER", "ADMIN"]), createBooking);
-router.post("/create-multiple", authenticateUserWithRole(["USER", "ADMIN"]), createMultipleBookings);
+router.post("/create-multiple", authenticateUserWithRole(["USER","COORDINATOR", "ADMIN"]), createMultipleBookings);
 
 // Preview booking - public route
 router.post("/preview", previewBooking);
@@ -31,8 +32,13 @@ router.post("/preview", previewBooking);
 // Get all bookings - ADMIN only
 router.get("/", authenticateUserWithRole(["ADMIN"]), getAllBookings);
 
+// Get user's own orders - USER endpoint
+router.get("/my-orders", authenticateUser, getUserOrders);
+
+// Get all orders - ADMIN only
+router.get("/orders/admin/all", authenticateUserWithRole(["ADMIN"]), getAllOrders);
+
 // Get single booking - authenticated users
-router.get("/orders", authenticateUser, getAllOrders);
 router.get("/:id", authenticateUser, getSingleBooking);
 router.get("/order/:orderId", authenticateUser, getBookingOrderDetails);
 

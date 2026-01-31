@@ -8,22 +8,22 @@ datasource db {
 }
 
 model User { 
-  id            String         @id @default(uuid())
-  name          String
-  email         String         @unique
-  password      String
-  phone         String
-  address       String?
-  role          Role           @default(USER)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  isVerified    Boolean        @default(false)
-  aiActions     AiAction[]
-  bookings      Booking[]
-  notifications Notification[]
-  reviews       Review[]
-  bookingOrders BookingOrder[]
-
+  id                 String              @id @default(uuid())
+  name               String
+  email              String              @unique
+  password           String
+  phone              String
+  address            String?
+  role               Role                @default(USER)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  isVerified         Boolean             @default(false)
+  aiActions          AiAction[]
+  bookings           Booking[]
+  notifications      Notification[]      @relation("UserNotifications")
+  userNotifications  UserNotification[]  // ✅ Per-user read/unread state
+  reviews            Review[]
+  bookingOrders      BookingOrder[]
 }
 
 model Room {
@@ -91,7 +91,7 @@ model Booking {
   status        BookingStatus @default(PENDING)
   source        BookingSource @default(WEBSITE)
   bookingOrderId String
-  bookingOrder   BookingOrder @relation(fields: [bookingOrderId], references: [id])
+  bookingOrder   BookingOrder @relation(fields: [bookingOrderId], references: [id], onDelete: Cascade)
 
   checkIn     DateTime
   checkOut    DateTime?
@@ -99,7 +99,7 @@ model Booking {
   updatedAt     DateTime      @updatedAt
   cancelledAt   DateTime?
   room        Room          @relation(fields: [roomId], references: [id])
-  user        User          @relation(fields: [userId], references: [id])
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   payment     Payment?
 }
 model BookingOrder {
@@ -113,7 +113,7 @@ model BookingOrder {
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
-  user        User          @relation(fields: [userId], references: [id])
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   bookings    Booking[]
 }
 
@@ -146,19 +146,44 @@ model Notification {
 
   // Optional: specific user (only when audience = USER)
   userId      String?
-  user        User?    @relation(fields: [userId], references: [id])
+  user        User?    @relation(name: "UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
 
   // Content
   title       String?
   message     String
   severity    NotificationSeverity @default(INFO)
 
-  // State
-  isRead      Boolean  @default(false)
-
   // Metadata
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // ✅ Per-user read/unread tracking
+  userNotifications UserNotification[]
+
+  @@index([audience])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+// ✅ NEW: Junction table for per-user read/unread state
+model UserNotification {
+  id              String   @id @default(uuid())
+  userId          String
+  notificationId  String
+
+  isRead          Boolean  @default(false)
+  readAt          DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notification    Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  // ✅ Ensure each user sees each notification only once
+  @@unique([userId, notificationId])
+  @@index([userId, isRead])
+  @@index([notificationId])
 }
 
 
@@ -171,7 +196,7 @@ model Review {
   comment   String?
   createdAt DateTime @default(now())
   room      Room     @relation(fields: [roomId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model AiAction {
@@ -181,7 +206,7 @@ model AiAction {
   payload   Json
   status    String   @default("PENDING")
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 enum NotificationAudience {
   USER        // single user
@@ -192,7 +217,8 @@ enum NotificationAudience {
 enum NotificationSeverity {
   INFO
   WARNING
-  CRITICAL
+  ERROR
+  SUCCESS
 }
 enum reviewStatus{
   APPROVED

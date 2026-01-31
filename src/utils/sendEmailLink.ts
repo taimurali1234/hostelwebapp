@@ -1,7 +1,6 @@
-import nodemailer, { Transporter } from "nodemailer";
 import { google } from "googleapis";
-
-let transporter: Transporter | null = null;
+import nodemailer from "nodemailer";
+import redis from "../config/redis"; // Aapka redis instance
 
 const oAuth2Client = new google.auth.OAuth2(
   process.env.CLIENT_ID,
@@ -9,59 +8,61 @@ const oAuth2Client = new google.auth.OAuth2(
   process.env.REDIRECT_URI
 );
 
-oAuth2Client.setCredentials({
-  refresh_token: process.env.REFRESH_TOKEN,
+// ⚡ AUTO-REFRESH LOGIC: Jab bhi token update ho, Redis mein save karein
+oAuth2Client.on("tokens", async (tokens) => {
+  if (tokens.refresh_token) {
+    await redis.set("google_refresh_token", tokens.refresh_token);
+    console.log("🔄 Redis: New Refresh Token persisted.");
+  }
 });
 
-// Create & verify transporter
-async function createTransporter(): Promise<Transporter> {
-  const accessToken = await oAuth2Client.getAccessToken();
+const getActiveRefreshToken = async () => {
+  // Pehlay Redis check karein, agar wahan nahi to .env wala use karein
+  const savedToken = await redis.get("google_refresh_token");
+  return savedToken || process.env.REFRESH_TOKEN;
+};
 
-  const newTransporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      type: "OAuth2",
-      user: process.env.EMAIL_USER,
-      clientId: process.env.CLIENT_ID,
-      clientSecret: process.env.CLIENT_SECRET,
-      refreshToken: process.env.REFRESH_TOKEN,
-      accessToken: accessToken.token!,
-    },
-  });
+const sendEmail = async (to: string, subject: string, html: string): Promise<void> => {
+  try {
+    const currentRefreshToken = await getActiveRefreshToken();
+    
+    oAuth2Client.setCredentials({ 
+      refresh_token: currentRefreshToken 
+    });
 
-  // 🔍 Verify email service
-  await newTransporter.verify();
-  console.log("✅ Email service verified successfully");
+    // Google library khud check karegi k token expire hai ya nahi
+    const { token } = await oAuth2Client.getAccessToken();
 
-  return newTransporter;
-}
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        type: "OAuth2",
+        user: process.env.EMAIL_USER,
+        clientId: process.env.CLIENT_ID,
+        clientSecret: process.env.CLIENT_SECRET,
+        refreshToken: currentRefreshToken,
+        accessToken: token as string,
+      },
+    });
 
-// Get cached transporter
-async function getTransporter(): Promise<Transporter> {
-  if (!transporter) {
-    transporter = await createTransporter();
+    await transporter.sendMail({
+      from: `"NeckRest" <${process.env.EMAIL_USER}>`,
+      to,
+      subject,
+      html,
+    });
+
+    console.log(`📧 Email sent to ${to}`);
+  } catch (error: any) {
+    console.error("📧 Mail Error:", error.message);
+    
+    // Agar token revoke ho chuka ho (invalid_grant)
+    if (error.message.includes("invalid_grant")) {
+        await redis.del("google_refresh_token");
+        throw new Error("Email authentication failed. Admin needs to re-login.");
+    }
+    throw error;
   }
-  return transporter;
-}
-
-// Send email
-const sendEmail = async (
-  to: string,
-  subject: string,
-  text?: string,
-  html?: string
-): Promise<void> => {
-  const mailTransporter = await getTransporter();
-
-  const mailOptions = {
-    from: `"NeckRest" <${process.env.EMAIL_USER}>`,
-    to,
-    subject,
-    text,
-    html,
-  };
-
-  await mailTransporter.sendMail(mailOptions);
 };
 
 export default sendEmail;

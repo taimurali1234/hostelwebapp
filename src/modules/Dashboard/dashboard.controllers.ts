@@ -1,131 +1,238 @@
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
 import prisma from "../../config/prismaClient";
 import { BookingStatus, RoomStatus } from "@prisma/client";
-import { sendOK, sendError } from "../../utils/response";
+import { asyncHandler } from "../../utils/asyncHandler";
+import { ApiError } from "../../utils/ApiError";
 
-export const getDashboardData = async (
-  req: Request,
-  res: Response
-) => {
-  try {
-    /* ---------------- DATE SETUP ---------------- */
+export const getDashboardData = asyncHandler(
+  async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
+    // Set today's date for comparison
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    console.log("dashboardapihit")
-    /* ---------------- TOP SUMMARY CARDS ---------------- */
 
-    // 1️⃣ Today's Booked Rooms
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // ============== TOP CARDS DATA ==============
+
+    // 1️⃣ Today's Booked Rooms (CONFIRMED bookings created today)
     const todayBookedRooms = await prisma.booking.count({
       where: {
         status: BookingStatus.CONFIRMED,
-        createdAt: { gte: today },
+        createdAt: { gte: today, lt: tomorrow },
       },
     });
-    console.log(todayBookedRooms)
 
-    // 2️⃣ Pending Rooms
-    const pendingRooms = await prisma.booking.count({
+    // 2️⃣ Pending Bookings Count
+    const pendingBookingsCount = await prisma.booking.count({
       where: {
         status: BookingStatus.PENDING,
       },
     });
 
-    // 3️⃣ Available Rooms
-    const availableRooms = await prisma.room.count({
+    // 3️⃣ Available Rooms Count
+    const availableRoomsCount = await prisma.room.count({
       where: {
         status: RoomStatus.AVAILABLE,
       },
     });
 
-    // 4️⃣ Total Revenue (from bookings)
-    const revenueAgg = await prisma.booking.aggregate({
+    // 4️⃣ Total Revenue (only from COMPLETED bookings)
+    const revenueData = await prisma.booking.aggregate({
       _sum: {
-        baseAmount: true, // 🔴 must exist in Booking
+        baseAmount: true,
       },
       where: {
-        status: BookingStatus.PENDING,
+        status: BookingStatus.COMPLETED,
       },
     });
-    console.log(revenueAgg)
 
-    /* ---------------- ROOMS BY TYPE ---------------- */
+    const totalRevenue = revenueData._sum.baseAmount || 0;
 
-    const roomsByType = await prisma.room.groupBy({
-      by: ["type"],
-      _count: { _all: true },
+    // ============== BOOKINGS DATA ==============
+
+    // 5️⃣ Pending Bookings (send full details to frontend)
+    const pendingBookings = await prisma.booking.findMany({
+      where: { status: BookingStatus.PENDING },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, phone: true },
+        },
+        room: {
+          select: {
+            id: true,
+            title: true,
+            type: true,
+            floor: true,
+            beds: true,
+          },
+        },
+        bookingOrder: {
+          select: { id: true, orderNumber: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
     });
 
-    /* ---------------- ROOM STATUS ---------------- */
+    // 6️⃣ Confirmed Bookings (send full details to frontend)
+    const confirmedBookings = await prisma.booking.findMany({
+      where: { status: BookingStatus.CONFIRMED },
+      include: {
+        user: {
+          select: { id: true, name: true, email: true, phone: true },
+        },
+        room: {
+          select: {
+            id: true,
+            title: true,
+            type: true,
+            floor: true,
+            beds: true,
+          },
+        },
+        bookingOrder: {
+          select: { id: true, orderNumber: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    });
 
-    const bookedRooms = await prisma.room.count({
+    // ============== ROOM OCCUPANCY DATA ==============
+
+    // 7️⃣ Total Occupied Rooms (BOOKED status)
+    const occupiedRoomsCount = await prisma.room.count({
       where: { status: RoomStatus.BOOKED },
     });
 
-    const availableRoomsCount = await prisma.room.count({
-      where: { status: RoomStatus.AVAILABLE },
+    // 8️⃣ Seat data by room type (total seats and occupied seats)
+    const roomsByType = await prisma.room.groupBy({
+      by: ["type"],
+      _sum: {
+        beds: true,
+        bookedSeats: true,
+      },
+      _count: {
+        id: true,
+      },
     });
 
-    /* ---------------- BOOKING OVERVIEW (LAST 6 MONTHS) ---------------- */
+    const seatDataByRoomType = roomsByType.map((room) => ({
+      roomType: room.type,
+      totalRooms: room._count.id,
+      totalSeats: room._sum.beds || 0,
+      occupiedSeats: room._sum.bookedSeats || 0,
+      availableSeats: (room._sum.beds || 0) - (room._sum.bookedSeats || 0),
+    }));
 
-    const bookings = await prisma.booking.findMany({
-  where: { status: BookingStatus.PENDING },
-  select: { createdAt: true },
-  take:6
-});
+    // ============== FLOOR STATUS ==============
 
-const monthlyMap: Record<string, number> = {};
+    // 9️⃣ Floor-wise room availability
+    const floorStatus = await prisma.room.groupBy({
+      by: ["floor"],
+      _count: {
+        id: true,
+      },
+      _sum: {
+        beds: true,
+        bookedSeats: true,
+      },
+    });
 
-bookings.forEach((b) => {
-  const month = b.createdAt.toLocaleString("en-US", {
-    month: "short",
-  });
+    const floorStatusData = floorStatus.map((floor) => ({
+      floorName: floor.floor,
+      totalRooms: floor._count.id,
+      totalSeats: floor._sum.beds || 0,
+      occupiedSeats: floor._sum.bookedSeats || 0,
+      availableSeats: (floor._sum.beds || 0) - (floor._sum.bookedSeats || 0),
+    }));
 
-  monthlyMap[month] = (monthlyMap[month] || 0) + 1;
-});
+    // ============== REVIEWS DATA ==============
 
-const bookingOverview = Object.entries(monthlyMap)
-  .map(([month, count]) => ({ month, count }))
-  .slice(0, 6);
-  console.log(bookingOverview)
-
-
-    /* ---------------- RECENT REVIEWS ---------------- */
-
-    const recentReviews = await prisma.review.findMany({
-      take: 5,
-      orderBy: { createdAt: "desc" },
-      select: {
-        rating: true,
-        comment: true,
+    // 🔟 Get recent reviews with user and room details
+    const reviews = await prisma.review.findMany({
+      include: {
         user: {
-          select: { name: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        room: {
+          select: {
+            id: true,
+            title: true,
+            type: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 15,
+    });
+
+    // Count reviews by status
+    const approvedReviewsCount = await prisma.review.count({
+      where: { status: "APPROVED" },
+    });
+
+    const pendingReviewsCount = await prisma.review.count({
+      where: { status: "PENDING" },
+    });
+
+    // ============== RESPONSE ==============
+
+    res.status(200).json({
+      success: true,
+      message: "Dashboard data loaded successfully",
+      data: {
+        // Top Cards Summary
+        summary: {
+          todayBookedRooms,
+          pendingBookingsCount,
+          availableRoomsCount,
+          occupiedRoomsCount,
+          totalRevenue,
+        },
+
+        // Booking Details
+        bookings: {
+          pending: {
+            count: pendingBookingsCount,
+            list: pendingBookings,
+          },
+          confirmed: {
+            count: await prisma.booking.count({
+              where: { status: BookingStatus.CONFIRMED },
+            }),
+            list: confirmedBookings,
+          },
+        },
+
+        // Room Occupancy Details
+        roomOccupancy: {
+          totalRooms: await prisma.room.count(),
+          availableRooms: availableRoomsCount,
+          occupiedRooms: occupiedRoomsCount,
+          seatsByRoomType: seatDataByRoomType,
+        },
+
+        // Floor Status
+        floorStatus: floorStatusData,
+
+        // Reviews Info
+        reviews: {
+          approvedCount: approvedReviewsCount,
+          pendingCount: pendingReviewsCount,
+          totalCount: approvedReviewsCount + pendingReviewsCount,
+          recentReviews: reviews,
         },
       },
     });
-
-    /* ---------------- FINAL RESPONSE ---------------- */
-
-    return sendOK(res, "Dashboard data loaded successfully", {
-      topCards: {
-        todayBookedRooms,
-        pendingRooms,
-        availableRooms,
-        totalRevenue: revenueAgg._sum.baseAmount || 0,
-      },
-
-      roomsByType,
-
-      roomStatus: {
-        booked: bookedRooms,
-        available: availableRoomsCount,
-      },
-
-      bookingOverview,
-
-      recentReviews,
-    });
-  } catch (error) {
-    console.error("Dashboard Error:", error);
-    return sendError(res, 500, "Failed to load dashboard");
   }
-};
+);

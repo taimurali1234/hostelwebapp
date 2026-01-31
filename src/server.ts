@@ -2,8 +2,7 @@ import http from "http";
 import app from "./app";
 import { connectRabit } from "./config/rabitmq";
 import { initSocketServer } from "./config/socket.server";
-import { startNotificationWorker } from "./modules/notifications/notification.service";
-
+import { startNotificationWorker } from "./utils/notificationWorker";
 const server = http.createServer(app);
 
 (async () => {

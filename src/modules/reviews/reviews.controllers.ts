@@ -1,24 +1,14 @@
-import {Request,Response, NextFunction } from "express";
+import { Request, Response, NextFunction } from "express";
 import prisma from "../../config/prismaClient";
-import { createReviewDTO, createReviewSchema, updateReviewDTO, updateReviewSchema } from "./reviewDTOS/reviews.dtos";
-import { sendSuccess, sendCreated, sendBadRequest, sendError, sendNotFound, sendOK, sendInternalServerError, sendForbidden } from "../../utils/response";
+import { asyncHandler } from "../../utils/asyncHandler";
+import { ApiError } from "../../utils/ApiError";
 
-export const createReview = async (req: Request, res: Response, next: NextFunction) => {
-  console.log("api hit")
-  try {
-    const parsedData:createReviewDTO = createReviewSchema.parse(req.body);
-    // let userId = req.user?.userId;
-    // if(!userId){
-    //   userId= parsedData.userId
-    // }
+export const createReview = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const { roomId, rating, comment, userId } = req.body;
 
-    // if (!userId) return res.status(401).json({ message: "Not authenticated" });
-
-    const { roomId, rating, comment,userId} = parsedData;
-
-    // Optional: check if room exists
     const room = await prisma.room.findUnique({ where: { id: roomId } });
-    if (!room) return sendNotFound(res, "Room not found");
+    if (!room) throw new ApiError(404, "Room not found");
 
     const review = await prisma.review.create({
       data: {
@@ -29,103 +19,91 @@ export const createReview = async (req: Request, res: Response, next: NextFuncti
       },
     });
 
-    return sendCreated(res, "Review created successfully", review);
-  } catch (error) {
-    next(error);
+    res.status(201).json({
+      success: true,
+      message: "Review created successfully",
+      data: review,
+    });
   }
-};
+);
 
-// Update Review
-export const updateReview = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const parsedData:updateReviewDTO = updateReviewSchema.parse(req.body);
+export const updateReview = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
-    const userId = req.user?.userId;
 
     const review = await prisma.review.findUnique({ where: { id } });
-    if (!review) return sendNotFound(res, "Review not found");
-
-    // Ownership check
-    // if (review.userId !== userId) {
-    //   return res.status(403).json({ message: "Not your review" });
-    // }
+    if (!review) throw new ApiError(404, "Review not found");
 
     const updatedReview = await prisma.review.update({
       where: { id },
-      data: parsedData,
+      data: req.body,
     });
 
-    return sendOK(res, "Review updated successfully", updatedReview);
-  } catch (error) {
-    next(error);
+    res.status(200).json({
+      success: true,
+      message: "Review updated successfully",
+      data: updatedReview,
+    });
   }
-};
+);
 
-// Delete Review
-export const deleteReview = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const deleteReview = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
-    const userId = req.user?.userId;
 
     const review = await prisma.review.findUnique({ where: { id } });
-    if (!review) return sendNotFound(res, "Review not found");
-
-    // if (review.userId !== userId) {
-    //   return res.status(403).json({ message: "Not your review" });
-    // }
+    if (!review) throw new ApiError(404, "Review not found");
 
     await prisma.review.delete({ where: { id } });
-    return sendOK(res, "Review deleted successfully");
-  } catch (error) {
-    next(error);
+
+    res.status(200).json({
+      success: true,
+      message: "Review deleted successfully",
+    });
   }
-};
+);
 
-// Get All Reviews for a Room
-export const getReviewsForRoom = async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    // Extract query params
+export const getReviewsForRoom = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const {
-      skip = "0",         // number of records to skip
-      take = "10",        // number of records to take
-      sortBy = "createdAt", // field to sort
-      order = "desc",     // asc | desc
-      minRating,          // optional filter
-      maxRating
+      skip = "0",
+      take = "10",
+      sortBy = "createdAt",
+      order = "desc",
+      minRating,
+      maxRating,
     } = req.query;
-        const { roomId } = req.params;
+    const { roomId } = req.params;
 
-
-    // Convert skip & take to numbers
     const skipNum = parseInt(skip as string, 10) || 0;
     const takeNum = parseInt(take as string, 10) || 10;
 
-    // Build where filter
     const where: any = {};
     if (minRating) where.rating = { gte: Number(minRating) };
     if (maxRating) where.rating = { ...where.rating, lte: Number(maxRating) };
 
     const reviews = await prisma.review.findMany({
-      where: {...where, roomId, },
-      include: { user: true }, // include user info
+      where: { ...where, roomId },
+      include: { user: true },
       orderBy: { [sortBy as string]: order as "asc" | "desc" },
       skip: skipNum,
       take: takeNum,
     });
+
     if (!reviews || reviews.length === 0) {
-      return sendNotFound(res, "No reviews found");
+      throw new ApiError(404, "No reviews found");
     }
 
-
-    sendOK(res, "Reviews fetched successfully", { reviews });
-  } catch (error) {
-    next(error);
+    res.status(200).json({
+      success: true,
+      message: "Reviews fetched successfully",
+      data: { reviews },
+    });
   }
-};
+);
 
-// Get Single Review
-export const getReview = async (req: Request, res: Response, next: NextFunction) => {
-  try {
+export const getReview = asyncHandler(
+  async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const { id } = req.params;
 
     const review = await prisma.review.findUnique({
@@ -133,22 +111,22 @@ export const getReview = async (req: Request, res: Response, next: NextFunction)
       include: { user: true, room: true },
     });
 
-    if (!review) return sendNotFound(res, "Review not found");
+    if (!review) throw new ApiError(404, "Review not found");
 
-    return sendOK(res, "Review fetched successfully", { review });
-  } catch (error) {
-    next(error);
+    res.status(200).json({
+      success: true,
+      message: "Review fetched successfully",
+      data: { review },
+    });
   }
-};
+);
 
-// get all reviews
-
-export const getAllReviews = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  try {
+export const getAllReviews = asyncHandler(
+  async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> => {
     const {
       page = "1",
       limit = "10",
@@ -163,22 +141,16 @@ export const getAllReviews = async (
     const limitNum = Number(limit) || 10;
     const skip = (pageNum - 1) * limitNum;
 
-    /* ======================
-       WHERE FILTER
-    ====================== */
     const where: any = {};
 
-    // ⭐ Exact rating filter (from dropdown)
-
     if (status) {
-  where.status = status;
-}
+      where.status = status;
+    }
 
     if (rating) {
       where.rating = Number(rating);
     }
 
-    // 🔍 Search (user name / room title / comment)
     if (search) {
       where.OR = [
         {
@@ -206,9 +178,6 @@ export const getAllReviews = async (
       ];
     }
 
-    /* ======================
-       DB QUERY
-    ====================== */
     const [reviews, total] = await Promise.all([
       prisma.review.findMany({
         where,
@@ -240,10 +209,8 @@ export const getAllReviews = async (
         limit: limitNum,
       },
     });
-  } catch (error) {
-    next(error);
   }
-};
+);
 
 
 
