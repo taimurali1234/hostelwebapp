@@ -1,32 +1,34 @@
 import http from "http";
 import app from "./app";
-import { connectRabit } from "./config/rabitmq";
 import { initSocketServer } from "./config/socket.server";
 import { startNotificationWorker } from "./utils/notificationWorker";
+import { logger } from "./utils/logger";
+import { connectRabbit } from "./config/rabitmq";
+
 const server = http.createServer(app);
 
 (async () => {
   try {
-    const rabbitConnected = await connectRabit();
+    const rabbitConnected = await connectRabbit();
 
     if (rabbitConnected) {
       startNotificationWorker();
-      console.log("✅ Notification worker started");
+      logger.success("Notification worker started");
     } else {
-      console.warn("⚠️ Notification worker NOT started (RabbitMQ not connected)");
+      logger.warn("Notification worker NOT started (RabbitMQ not connected)");
     }
 
     await initSocketServer(server);
-    console.log("✅ Socket server initialized");
+    logger.success("Socket server initialized");
 
     const PORT = process.env.PORT || 3000;
 
     server.listen(PORT, () => {
-      console.log(`🚀 hi Server listening on port ${PORT}`);
+      logger.success(`Server listening on port ${PORT}`);
     });
 
   } catch (error) {
-    console.error("❌ Server startup failed:", error);
+    logger.error("Server startup failed", error);
     process.exit(1);
   }
 })();

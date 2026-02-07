@@ -1,8 +1,8 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
-import morgan from "morgan";
 import { logger } from "./utils/logger";
+import morganLogger from "./middlewares/morganLogger";
 import authRoutes from "./modules/users/user.routes"
 import roomRoutes from "./modules/rooms/room.routes"
 import roomImageRoutes from "./modules/roomImages/roomImages.routes"
@@ -13,7 +13,7 @@ import reviewsRoutes from "./modules/reviews/review.routes"
 import notificationRoutes from "./modules/notifications/notification.routes"
 import dasdboardRoutes from "./modules/Dashboard/dashbaord.routes"
 import paymentRoutes from "./modules/payments/payment.routes"
-import aiRoutes from "./modules/ai/ai.routes"
+import aiAssistantRoutes from "./modules/ai/aiAssistant.routes"
 import { errorHandler } from "./middlewares/error.middleware";
 
 const app = express();
@@ -35,24 +35,9 @@ app.use(
 /**
  * 📊 MORGAN HTTP REQUEST LOGGING
  * Logs all HTTP requests with method, path, status code, and duration
+ * Uses Winston in production, console in development
  */
-app.use(
-  morgan((tokens, req, res) => {
-    const method = tokens.method(req, res);
-    const url = tokens.url(req, res);
-    const status = tokens.status(req, res);
-    const responseTime = tokens["response-time"](req, res);
-
-    // Extract user info from JWT if available
-    const user = (req as any).user;
-    const userInfo = user ? `${user.email} (${user.role})` : "Anonymous";
-
-    // Use global logger
-    logger.http(method || "GET", url || "/", parseInt(status || "500"), parseFloat(responseTime || "0"), userInfo);
-
-    return null; // Don't use Morgan's default output
-  })
-);
+app.use(morganLogger);
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 app.use("/api/users",authRoutes)
@@ -65,7 +50,7 @@ app.use("/api/reviews", reviewsRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/dashboard", dasdboardRoutes);
 app.use("/api/payments", paymentRoutes);
-app.use("/api/ai", aiRoutes);
+app.use("/api/ai-assistant", aiAssistantRoutes);
 
 
 app.use(errorHandler);

@@ -21,7 +21,7 @@ const token = req.cookies.accessToken || req.cookies.refreshToken ||
         if (!roles.includes(decoded.role)) {
                 return res.status(403).json({ message: 'Forbidden: You do not have the required permissions' });
             }
-            req.user={userId:decoded.userId,role:decoded.role};
+            req.user={userId:decoded.userId,email:decoded.email,role:decoded.role};
             console.log(req.user)
             next();
     }

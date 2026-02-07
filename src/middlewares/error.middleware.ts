@@ -10,12 +10,24 @@ export const errorHandler = (err: unknown, req: Request, res: Response, next: Ne
   let message = "Internal Server Error";
   let errors: any[] = [];
 
+  // Prepare error context with request details
+  const errorContext = {
+    method: req.method,
+    path: req.path,
+    ip: req.ip,
+    userAgent: req.get("user-agent"),
+  };
+
   // ApiError - Custom application errors
   if (err instanceof ApiError) {
     statusCode = err.statusCode;
     message = err.message;
     errors = err.errors;
-    logger.warn(`API Error: ${message}`, { statusCode, path: req.path, method: req.method });
+    logger.warn(`API Error: ${message}`, {
+      ...errorContext,
+      statusCode,
+      errors,
+    });
   }
   // ZodError - Validation errors
   else if (err instanceof ZodError) {
@@ -25,7 +37,11 @@ export const errorHandler = (err: unknown, req: Request, res: Response, next: Ne
       field: err.path.join("."),
       message: err.message,
     }));
-    logger.warn(`Validation Error: ${message}`, { path: req.path, fieldCount: errors.length });
+    logger.warn(`Validation Error: ${message}`, {
+      ...errorContext,
+      fieldCount: errors.length,
+      validationErrors: errors,
+    });
   }
   // Prisma errors
   else if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -42,7 +58,11 @@ export const errorHandler = (err: unknown, req: Request, res: Response, next: Ne
         statusCode = 400;
         message = "Database error";
     }
-    logger.error(`Prisma Error [${err.code}]: ${message}`, err);
+    logger.error(`Prisma Error [${err.code}]: ${message}`, err, {
+      ...errorContext,
+      prismaCode: err.code,
+      meta: err.meta,
+    });
   }
   // Multer errors - File upload errors
   else if (err instanceof multer.MulterError) {
@@ -53,21 +73,31 @@ export const errorHandler = (err: unknown, req: Request, res: Response, next: Ne
       statusCode = 400;
       message = "Each image must be less than 5MB";
     }
-    logger.warn(`File Upload Error: ${message}`, { code: err.code });
+    logger.warn(`File Upload Error: ${message}`, {
+      ...errorContext,
+      multerCode: err.code,
+    });
   }
   // Default error handling for unknown errors
   else if (err instanceof Error) {
     message = err.message;
-    logger.error(`Unexpected Error: ${message}`, err);
+    logger.error(`Unexpected Error: ${message}`, err, {
+      ...errorContext,
+      errorType: "Error",
+    });
   } else {
-    logger.error(`Unknown Error Type`, undefined, { errorType: typeof err });
+    logger.error(`Unknown Error Type`, undefined, {
+      ...errorContext,
+      errorType: typeof err,
+      error: String(err),
+    });
   }
 
   const response = {
     success: false,
     message,
     errors,
-    ...(process.env.NODE_ENV === "development" ? { stack: err instanceof Error ? err.stack : "" } : {}), // Security: Production mein stack hide rakhein
+    ...(process.env.NODE_ENV === "development" ? { stack: err instanceof Error ? err.stack : "" } : {}), // Security: hide stack in production
   };
 
   res.status(statusCode).json(response);

@@ -16,11 +16,12 @@ const authenticateUser = async (req:Request,res:Response,next:NextFunction):Prom
         const user=await prisma.user.findUnique({
             where:{id:decoded.userId}
         });
+        console.log("Decoded JWT payload:", decoded);
         // console.log("Authenticated user:", user);
         if(!user){
             return res.status(401).json({message:'Invalid token: user not found'});
         }
-        req.user={userId:user.id,role:user.role};
+        req.user={userId:user.id,email:user.email,role:user.role};
         next();
     }
     catch(error){

@@ -4,8 +4,8 @@ import { BookingType, BookingStatus } from "@prisma/client";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/ApiError";
 import { syncRoomSeats } from "../../utils/SeatManager";
-import { publishToQueue } from "../../config/rabitmq";
 import { logger } from "../../utils/logger";
+import { publishToQueue } from "../../utils/rabit/rabit.publisher";
 
 /**
  * Helper function to generate order number

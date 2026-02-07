@@ -8,10 +8,10 @@ import sendEmail from "../../utils/sendEmailLink";
 import { logger } from "../../utils/logger";
 
 import { Role } from "@prisma/client";
-import { publishToQueue } from "../../config/rabitmq";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/ApiError";
 import { tr } from "zod/v4/locales";
+import { publishToQueue } from "../../utils/rabit/rabit.publisher";
 
 const adminEmails = process.env.ADMIN_EMAILS?.split(",") || [];
 const coordinatorEmails = process.env.COORDINATOR_EMAILS?.split(",") || [];
