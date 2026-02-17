@@ -81,4 +81,6 @@ jobs:
 
             echo "Restarting app with PM2..."
             pm2 reload hostel-backend || pm2 start dist/server.js --name hostel-backend
+            echo "Starting email worker..."
+            pm2 reload email-worker || pm2 start dist/workers/email.worker.js --name email-worker
             pm2 save
