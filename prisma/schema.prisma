@@ -46,6 +46,7 @@ model Room {
   reviews         Review[]
   images          RoomImage[]
   videos          RoomVideo[]
+  cartItems CartItem[]
 
 }
 model RoomVideo{
@@ -74,7 +75,37 @@ model RoomImage {
   createdAt   DateTime    @default(now())
   room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
 }
+model Cart {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  status    CartStatus @default(ACTIVE)
+  items     CartItem[]
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+model CartItem {
+  id            String   @id @default(uuid())
+  cartId        String
+  cart          Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
 
+  roomId        String
+  room     Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  stayType      BookingType
+  selectedSeats Int
+  quantity      Int
+  priceWithTax  Float
+  total         Float
+  addedAt       DateTime @default(now())
+
+  checkInDate   DateTime?
+  checkOutDate  DateTime?
+}
+
+enum CartStatus {
+  ACTIVE
+  CHECKED_OUT
+  EXPIRED
+}
 model Booking {
   id          String        @id @default(uuid())
   userId      String

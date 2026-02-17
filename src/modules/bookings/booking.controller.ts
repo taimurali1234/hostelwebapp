@@ -5,6 +5,7 @@ import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/ApiError";
 import { syncRoomSeats } from "../../utils/SeatManager";
 import { logger } from "../../utils/logger";
+import { nanoid } from "nanoid";
 import { publishToQueue } from "../../utils/rabit/rabit.publisher";
 
 /**
@@ -280,7 +281,7 @@ export const createMultipleBookings = asyncHandler(
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      const orderNumber = await generateOrderNumber(tx);
+const orderNumber = `ORD-${nanoid(10)}`;
 
       // 🟢 CREATE ORDER
       const order = await tx.bookingOrder.create({

@@ -14,6 +14,8 @@ import notificationRoutes from "./modules/notifications/notification.routes"
 import dasdboardRoutes from "./modules/Dashboard/dashbaord.routes"
 import paymentRoutes from "./modules/payments/payment.routes"
 import aiAssistantRoutes from "./modules/ai/aiAssistant.routes"
+import cartItemsRoutes from "./modules/cart/routes.cart"
+import contactRoutes from "./modules/contact/contact.routes"
 import { errorHandler } from "./middlewares/error.middleware";
 
 const app = express();
@@ -42,6 +44,7 @@ app.use(morganLogger);
 app.get("/health", (req, res) => res.json({ status: "ok" }));
 app.use("/api/users",authRoutes)
 app.use("/api/rooms",roomRoutes)
+app.use("/api/cart",cartItemsRoutes)
 app.use("/api/rooms/uploads",roomImageRoutes)
 app.use("/api/seat-pricing", seatPricingRoutes);
 app.use("/api/tax-config", taxConfigRoutes);
@@ -51,6 +54,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/dashboard", dasdboardRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/ai-assistant", aiAssistantRoutes);
+app.use("/api/contact", contactRoutes);
 
 
 app.use(errorHandler);
