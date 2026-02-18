@@ -3,7 +3,6 @@ import {
   initiatePayment,
   getPaymentDetails,
   verifyPayment,
-  stripeWebhook,
   easyPaisaCallback,
   jazzCashCallback,
   getPaymentStatus,
@@ -44,9 +43,6 @@ router.post(
 
 // Get payment status by transaction ID - Public (needed for status checks)
 router.get("/status/:transactionId", getPaymentStatus);
-
-// Stripe webhook - handles async payment updates (requires Stripe signature verification)
-router.post("/webhook/stripe", stripeWebhook);
 
 // EasyPaisa payment callback (requires provider signature verification)
 router.post("/easypaisa/callback", easyPaisaCallback);

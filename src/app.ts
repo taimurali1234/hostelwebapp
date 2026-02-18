@@ -13,12 +13,17 @@ import reviewsRoutes from "./modules/reviews/review.routes"
 import notificationRoutes from "./modules/notifications/notification.routes"
 import dasdboardRoutes from "./modules/Dashboard/dashbaord.routes"
 import paymentRoutes from "./modules/payments/payment.routes"
+import stripePaymentRouter from "./modules/payments/routes/stripe-payment.routes";
+import stripeWebhookRouter from "./modules/payments/routes/stripe-webhook.routes";
 import aiAssistantRoutes from "./modules/ai/aiAssistant.routes"
 import cartItemsRoutes from "./modules/cart/routes.cart"
 import contactRoutes from "./modules/contact/contact.routes"
 import { errorHandler } from "./middlewares/error.middleware";
 
 const app = express();
+
+// Stripe webhook needs raw body for signature verification.
+app.use("/api/webhooks", stripeWebhookRouter);
 
 app.use(express.json());
 app.use(cookieParser());
@@ -52,7 +57,8 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/reviews", reviewsRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/dashboard", dasdboardRoutes);
-app.use("/api/payments", paymentRoutes);
+// app.use("/api/webhooks", );
+app.use("/api/payments", stripePaymentRouter);
 app.use("/api/ai-assistant", aiAssistantRoutes);
 app.use("/api/contact", contactRoutes);
 

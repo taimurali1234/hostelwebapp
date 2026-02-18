@@ -294,14 +294,15 @@ enum BookingSource {
 
 enum PaymentMethod {
   STRIPE
-  PAYPAL
   EASYPAISA
+  JAZZCASH
 }
 
 enum PaymentStatus {
   SUCCESS
   FAILED
   PENDING
+  REFUNDED
 }
 enum RoomStatus{
   AVAILABLE
