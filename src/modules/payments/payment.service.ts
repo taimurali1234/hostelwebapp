@@ -50,7 +50,7 @@ export class PaymentService {
 
       // Check if payment already exists
       const existingPayment = await prisma.payment.findUnique({
-        where: { bookingId },
+        where: { bookingOrderId: bookingId },
       });
 
       if (existingPayment && existingPayment.paymentStatus === PaymentStatus.SUCCESS) {
@@ -85,7 +85,7 @@ export class PaymentService {
           });
           break;
 
-        case PaymentMethod.PAYPAL:
+        case PaymentMethod.JAZZCASH:
           // JazzCash as alternative mobile payment
           response = await this.jazzCashService.initiatePayment({
             bookingId,
@@ -129,14 +129,14 @@ export class PaymentService {
       const result = await prisma.$transaction(async (tx) => {
         // Update or create payment record
         await tx.payment.upsert({
-          where: { bookingId },
+          where: { bookingOrderId: bookingId },
           update: {
             paymentStatus: PaymentStatus.SUCCESS,
             transactionId,
             paymentMethod,
           },
           create: {
-            bookingId,
+            bookingOrderId: bookingId,
             paymentStatus: PaymentStatus.SUCCESS,
             transactionId,
             paymentMethod,
@@ -200,13 +200,13 @@ export class PaymentService {
   ): Promise<{ success: boolean; message: string }> {
     try {
       await prisma.payment.upsert({
-        where: { bookingId },
+        where: { bookingOrderId: bookingId },
         update: {
           paymentStatus: PaymentStatus.FAILED,
           transactionId,
         },
         create: {
-          bookingId,
+          bookingOrderId: bookingId,
           paymentStatus: PaymentStatus.FAILED,
           transactionId,
           paymentMethod,
@@ -232,12 +232,11 @@ export class PaymentService {
   async getPaymentDetails(bookingId: string) {
     try {
       const payment = await prisma.payment.findUnique({
-        where: { bookingId },
+        where: { bookingOrderId: bookingId },
         include: {
-          booking: {
+          bookingOrder: {
             include: {
               user: true,
-              room: true,
             },
           },
         },
@@ -272,7 +271,7 @@ export class PaymentService {
           status = await this.easyPaisaService.verifyPayment(transactionId);
           break;
 
-        case PaymentMethod.PAYPAL:
+        case PaymentMethod.JAZZCASH:
           status = await this.jazzCashService.verifyPayment(transactionId);
           break;
 

@@ -141,7 +141,7 @@ export const verifyPayment = async (
     const { bookingId } = parsedData;
 
     const payment = await prisma.payment.findUnique({
-      where: { bookingId },
+      where: { bookingOrderId: bookingId },
     });
 
     if (!payment) {
@@ -318,7 +318,7 @@ export const jazzCashCallback = async (
         const result = await PaymentService.handlePaymentSuccess(
           callbackResult.transactionId,
           bookingId,
-          PaymentMethod.PAYPAL
+          PaymentMethod.JAZZCASH
         );
 
         return res.status(200).json({
@@ -359,7 +359,7 @@ export const getPaymentStatus = async (
 
     const payment = await prisma.payment.findFirst({
       where: { transactionId },
-      include: { booking: true },
+      include: { bookingOrder: true },
     });
 
     if (!payment) {
@@ -374,11 +374,11 @@ export const getPaymentStatus = async (
       message: "Payment status fetched successfully",
       data: {
         transactionId: payment.transactionId,
-        bookingId: payment.bookingId,
+        bookingId: payment.bookingOrderId,
         paymentMethod: payment.paymentMethod,
         paymentStatus: payment.paymentStatus,
         createdAt: payment.createdAt,
-        bookingStatus: payment.booking.status,
+        bookingStatus: payment.bookingOrder.status,
       }
     });
   } catch (error) {

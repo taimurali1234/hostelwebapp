@@ -21,7 +21,7 @@ export const handlePaymentWebhook = async (
     // Verify transaction status with payment provider
     let paymentMethod: PaymentMethod = PaymentMethod.STRIPE;
     if (provider === "EASYPAISA") paymentMethod = PaymentMethod.EASYPAISA;
-    if (provider === "JAZZCASH") paymentMethod = PaymentMethod.PAYPAL;
+    if (provider === "JAZZCASH") paymentMethod = PaymentMethod.JAZZCASH;
 
     const verification = await PaymentService.verifyPaymentStatus(
       transactionId,

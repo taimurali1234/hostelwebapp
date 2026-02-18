@@ -572,7 +572,14 @@ export const getSingleBooking = asyncHandler(
       include: {
         room: true,
         user: true,
-        payment: true,
+        bookingOrder: {
+          select: {
+            id: true,
+            orderNumber: true,
+            status: true,
+            totalAmount: true,
+          },
+        },
       },
     });
 

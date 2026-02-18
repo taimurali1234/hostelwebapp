@@ -237,7 +237,7 @@ export class StripePaymentService {
 
     await prisma.payment.updateMany({
       where: {
-        bookingId,
+        bookingOrderId: bookingId,
         paymentStatus: {
           not: PaymentStatus.REFUNDED,
         },
