@@ -7,39 +7,39 @@ import { logger } from "../../../utils/logger";
 const createCheckoutSessionSchema = z.object({
   bookingId: z.string().uuid(),
   amount: z.number().int().positive(),
-  customerEmail: z.string().email(),
 });
 
 export const createStripeCheckoutSession = async (req: Request, res: Response) => {
+  console.log(req.body);
   try {
     const stripePaymentService = new StripePaymentService();
-    const { bookingId, amount, customerEmail } = createCheckoutSessionSchema.parse(req.body);
+    const { bookingId, amount } = createCheckoutSessionSchema.parse(req.body);
 
-    const booking = await prisma.booking.findUnique({
+    const bookingOrder = await prisma.bookingOrder.findUnique({
       where: { id: bookingId },
-      select: { id: true, userId: true, baseAmount: true },
+      select: { id: true, userId: true, totalAmount: true },
     });
 
-    if (!booking) {
+    if (!bookingOrder) {
       return res.status(404).json({
         success: false,
-        message: "Booking not found",
+        message: "Booking Order not found",
       });
     }
 
     // Optional authorization check when auth middleware is applied to this route.
-    if (req.user?.role !== "ADMIN" && req.user?.userId && req.user.userId !== booking.userId) {
+    if (req.user?.role !== "ADMIN" && req.user?.userId && req.user.userId !== bookingOrder.userId) {
       return res.status(403).json({
         success: false,
         message: "You cannot create a checkout session for this booking",
       });
     }
 
-    if (amount !== booking.baseAmount) {
-      logger.warn("Checkout amount does not match booking.baseAmount", {
+    if (amount !== bookingOrder.totalAmount) {
+      logger.warn("Checkout amount does not match bookingOrder.totalAmount", {
         bookingId,
         requestedAmount: amount,
-        bookingBaseAmount: booking.baseAmount,
+        bookingTotalAmount: bookingOrder.totalAmount,
       });
       return res.status(400).json({
         success: false,
@@ -50,7 +50,6 @@ export const createStripeCheckoutSession = async (req: Request, res: Response) =
     const session = await stripePaymentService.createCheckoutSession(
       bookingId,
       amount,
-      customerEmail
     );
 
     return res.status(201).json({
