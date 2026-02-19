@@ -164,6 +164,7 @@ model Payment {
   paymentMethod PaymentMethod
   paymentStatus PaymentStatus
   transactionId String
+  amountPaid    Int?
   createdAt     DateTime      @default(now())
   bookingOrder       BookingOrder       @relation(fields: [bookingOrderId], references: [id])
 }

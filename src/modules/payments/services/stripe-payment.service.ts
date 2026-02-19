@@ -1,6 +1,6 @@
 import Stripe from "stripe";
 import prisma from "../../../config/prismaClient";
-import { PaymentMethod, PaymentStatus, BookingStatus } from "@prisma/client";
+import { PaymentMethod, PaymentStatus, BookingStatus, Prisma } from "@prisma/client";
 import { logger } from "../../../utils/logger";
 
 export interface CreateCheckoutSessionInput {
@@ -12,6 +12,16 @@ export interface CreateCheckoutSessionOutput {
   sessionId: string;
   sessionUrl: string;
 }
+
+export type PaymentWithBookingOrder = Prisma.PaymentGetPayload<{
+  include: {
+    bookingOrder: {
+      include: {
+        bookings: true;
+      };
+    };
+  };
+}>;
 
 export class StripePaymentService {
   private readonly stripe: Stripe;
@@ -108,21 +118,6 @@ export class StripePaymentService {
       throw new Error("Stripe Checkout Session URL was not returned");
     }
 
-    await prisma.payment.upsert({
-      where: { bookingOrderId: bookingId },
-      update: {
-        transactionId: session.id,
-        paymentMethod: PaymentMethod.STRIPE,
-        paymentStatus: PaymentStatus.PENDING,
-      },
-      create: {
-        bookingOrderId: bookingId,
-        transactionId: session.id,
-        paymentMethod: PaymentMethod.STRIPE,
-        paymentStatus: PaymentStatus.PENDING,
-      },
-    });
-
     logger.info("Stripe checkout session created", {
       bookingId,
       sessionId: session.id,
@@ -144,6 +139,14 @@ export class StripePaymentService {
     }
 
     await prisma.$transaction(async (tx) => {
+      const bookingOrder = await tx.bookingOrder.findUnique({
+        where: { id: bookingId },
+        select: { totalAmount: true },
+      });
+
+      if (!bookingOrder) {
+        throw new Error("Booking Order not found");
+      }
   // 1️⃣ Update payment
   await tx.payment.upsert({
     where: { bookingOrderId: bookingId },
@@ -151,12 +154,14 @@ export class StripePaymentService {
       transactionId: session.id,
       paymentMethod: PaymentMethod.STRIPE,
       paymentStatus: PaymentStatus.SUCCESS,
+      amountPaid: bookingOrder.totalAmount,
     },
     create: {
       bookingOrderId: bookingId,
       transactionId: session.id,
       paymentMethod: PaymentMethod.STRIPE,
       paymentStatus: PaymentStatus.SUCCESS,
+      amountPaid: bookingOrder.totalAmount,
     },
   });
 
@@ -287,6 +292,55 @@ for (const booking of bookings) {
     logger.info("Stripe charge.refunded processed", {
       bookingId,
       chargeId: charge.id,
+    });
+  }
+
+  async getAllPayments(params?: { skip?: number; take?: number }): Promise<PaymentWithBookingOrder[]> {
+    const { skip, take } = params ?? {};
+
+    return prisma.payment.findMany({
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+      include: {
+        bookingOrder: {
+          include: {
+            bookings: true,
+          },
+        },
+      },
+    });
+  }
+
+  async deletePaymentById(paymentId: string): Promise<PaymentWithBookingOrder> {
+    const existingPayment = await prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: {
+        bookingOrder: {
+          include: {
+            bookings: true,
+          },
+        },
+      },
+    });
+
+    if (!existingPayment) {
+      throw new Error("PAYMENT_NOT_FOUND");
+    }
+
+    if (existingPayment.paymentStatus !== PaymentStatus.PENDING) {
+      throw new Error("ONLY_PENDING_PAYMENT_CAN_BE_DELETED");
+    }
+
+    return prisma.payment.delete({
+      where: { id: paymentId },
+      include: {
+        bookingOrder: {
+          include: {
+            bookings: true,
+          },
+        },
+      },
     });
   }
 }
