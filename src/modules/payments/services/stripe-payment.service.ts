@@ -181,7 +181,42 @@ export class StripePaymentService {
     },
     data: { status: BookingStatus.CONFIRMED },
   });
+  // 4) Reduce available seats per room for this paid booking order
+const bookings = await tx.booking.findMany({
+  where: { bookingOrderId: bookingId },
+  select: {
+    roomId: true,
+    seatsSelected: true, // use your booking seat field (e.g. seatsBooked/quantity)
+  },
 });
+
+// Group total seats to reduce by room
+const seatsByRoom = new Map<string, number>();
+for (const booking of bookings) {
+  const current = seatsByRoom.get(booking.roomId) ?? 0;
+  seatsByRoom.set(booking.roomId, current + booking.seatsSelected);
+}
+
+	// Atomic decrement with non-negative guard
+	for (const [roomId, seatsToReduce] of seatsByRoom.entries()) {
+	  const updated = await tx.room.updateMany({
+	    where: {
+	      id: roomId,
+	      availableSeats: { gte: seatsToReduce }, // prevent going below 0
+	    },
+	    data: {
+	      availableSeats: { decrement: seatsToReduce },
+	      bookedSeats: { increment: seatsToReduce },
+	    },
+	  });
+
+  if (updated.count === 0) {
+    throw new Error(`Insufficient available seats for room ${roomId}`);
+  }
+}
+});
+
+
 
     logger.info("Stripe checkout.session.completed processed", {
       bookingId,
