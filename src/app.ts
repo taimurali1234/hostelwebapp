@@ -1,6 +1,7 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import helmet from "helmet";
 import { logger } from "./utils/logger";
 import morganLogger from "./middlewares/morganLogger";
 import authRoutes from "./modules/users/user.routes"
@@ -27,6 +28,15 @@ app.use("/api/webhooks", stripeWebhookRouter);
 
 app.use(express.json());
 app.use(cookieParser());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        frameSrc: ["'self'", "https://www.google.com"],
+      },
+    },
+  })
+);
 app.use(
   cors({
     origin: [
