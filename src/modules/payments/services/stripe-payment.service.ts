@@ -313,39 +313,46 @@ for (const booking of bookings) {
   }
 
   async deletePaymentById(paymentId: string): Promise<PaymentWithBookingOrder> {
-    const existingPayment = await prisma.payment.findUnique({
-      where: { id: paymentId },
-      include: {
-        bookingOrder: {
-          include: {
-            bookings: true,
-            id: true,
-          },
+  const existingPayment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: {
+      bookingOrder: {
+        include: {
+          bookings: true,
         },
       },
-    });
+    },
+  });
 
-    if (!existingPayment) {
-      throw new Error("PAYMENT_NOT_FOUND");
-    }
-
-    if (existingPayment.paymentStatus !== PaymentStatus.PENDING) {
-      throw new Error("ONLY_PENDING_PAYMENT_CAN_BE_DELETED");
-    }
-
-    return prisma.payment.delete({
-      where: { id: paymentId },
-      include: {
-        bookingOrder: {
-          
-          include: {
-            bookings: true,
-            
-          },
-        },
-      },
-    });
+  if (!existingPayment) {
+    throw new Error("PAYMENT_NOT_FOUND");
   }
+
+  if (existingPayment.paymentStatus !== PaymentStatus.PENDING) {
+    throw new Error("ONLY_PENDING_PAYMENT_CAN_BE_DELETED");
+  }
+
+  const bookingOrderId = existingPayment.bookingOrderId;
+
+  // Use transaction for safety
+  return prisma.$transaction(async (tx) => {
+    // Capture data before deletion (for response)
+    const deletedPaymentData = existingPayment;
+
+    // 1️⃣ Delete bookingOrder (this will cascade bookings)
+    await tx.bookingOrder.delete({
+      where: { id: bookingOrderId },
+    });
+
+    // 2️⃣ Optionally delete payment explicitly (safe even if cascade exists)
+    await tx.payment.delete({
+      where: { id: paymentId },
+    });
+
+    return deletedPaymentData;
+  });
+}
+
 }
 
 export default StripePaymentService;
