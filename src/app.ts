@@ -30,13 +30,11 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        frameSrc: ["'self'", "https://www.google.com"],
-      },
-    },
+    contentSecurityPolicy: false,
+    frameguard: false,
   })
 );
+
 app.use(
   cors({
     origin: [
