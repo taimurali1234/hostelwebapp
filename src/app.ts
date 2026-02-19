@@ -28,12 +28,7 @@ app.use("/api/webhooks", stripeWebhookRouter);
 
 app.use(express.json());
 app.use(cookieParser());
-app.use(
-  helmet({
-    contentSecurityPolicy: false,
-    frameguard: false,
-  })
-);
+
 
 app.use(
   cors({
