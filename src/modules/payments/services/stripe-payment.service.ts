@@ -275,18 +275,44 @@ for (const booking of bookings) {
       return;
     }
 
-    await prisma.payment.updateMany({
-      where: {
-        bookingOrderId: bookingId,
-        paymentStatus: {
-          not: PaymentStatus.REFUNDED,
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({
+        where: {
+          bookingOrderId: bookingId,
+          paymentStatus: {
+            not: PaymentStatus.REFUNDED,
+          },
         },
-      },
-      data: {
-        transactionId: charge.id,
-        paymentMethod: PaymentMethod.STRIPE,
-        paymentStatus: PaymentStatus.REFUNDED,
-      },
+        data: {
+          transactionId: charge.id,
+          paymentMethod: PaymentMethod.STRIPE,
+          paymentStatus: PaymentStatus.REFUNDED,
+        },
+      });
+
+      await tx.bookingOrder.updateMany({
+        where: {
+          id: bookingId,
+          status: {
+            not: BookingStatus.CANCELLED,
+          },
+        },
+        data: {
+          status: BookingStatus.CANCELLED,
+        },
+      });
+
+      await tx.booking.updateMany({
+        where: {
+          bookingOrderId: bookingId,
+          status: {
+            not: BookingStatus.CANCELLED,
+          },
+        },
+        data: {
+          status: BookingStatus.CANCELLED,
+        },
+      });
     });
 
     logger.info("Stripe charge.refunded processed", {
