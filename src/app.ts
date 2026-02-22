@@ -1,6 +1,7 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import { logger } from "./utils/logger";
 import morganLogger from "./middlewares/morganLogger";
 import authRoutes from "./modules/users/user.routes"
@@ -21,6 +22,28 @@ import contactRoutes from "./modules/contact/contact.routes"
 import { errorHandler } from "./middlewares/error.middleware";
 
 const app = express();
+
+const apiRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300, // max requests per IP per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many requests, please try again later.",
+  },
+});
+
+const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 60, // stricter for auth-related endpoints
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many auth requests, please try again later.",
+  },
+});
 
 // Stripe webhook needs raw body for signature verification.
 app.use("/api/webhooks", stripeWebhookRouter);
@@ -52,9 +75,10 @@ app.use(
  * Uses Winston in production, console in development
  */
 app.use(morganLogger);
+app.use("/api", apiRateLimiter);
 
 app.get("/health", (req, res) => res.json({ status: "ok" }));
-app.use("/api/users",authRoutes)
+app.use("/api/users", authRateLimiter, authRoutes)
 app.use("/api/rooms",roomRoutes)
 app.use("/api/cart",cartItemsRoutes)
 app.use("/api/rooms/uploads",roomImageRoutes)

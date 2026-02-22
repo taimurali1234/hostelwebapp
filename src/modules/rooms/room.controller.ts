@@ -6,12 +6,24 @@ import {
   updateRoomSchema,
 } from "./RoomDTOS/room.dtos";
 import prisma from "../../config/prismaClient";
+import redis from "../../config/redis";
 import { deleteFromS3 } from "../../utils/uploadToS3";
 import { logger } from "../../utils/logger";
 import constants from "constants";
 import { calculateRoomSeats, validateBedsUpdate } from "../../utils/roomSeatManager";
 import { asyncHandler } from "../../utils/asyncHandler";
 import { ApiError } from "../../utils/ApiError";
+
+const ROOMS_CACHE_VERSION_KEY = "rooms:list:version";
+const ROOMS_CACHE_TTL_SECONDS = 60;
+
+const bumpRoomsCacheVersion = async () => {
+  try {
+    await redis.incr(ROOMS_CACHE_VERSION_KEY);
+  } catch (error) {
+    logger.warn("Failed to bump rooms cache version", { error });
+  }
+};
 
 export const createRoom = asyncHandler(async (
   req: Request,
@@ -60,6 +72,8 @@ export const createRoom = asyncHandler(async (
       longTermPrice: longTermPricing.price,
     },
   });
+
+  await bumpRoomsCacheVersion();
 
   res.status(201).json({
     success: true,
@@ -160,6 +174,8 @@ export const updateRoom = asyncHandler(async (
     },
   });
 
+  await bumpRoomsCacheVersion();
+
   res.status(200).json({
     success: true,
     message: "Room updated successfully",
@@ -229,6 +245,33 @@ export const getRooms = asyncHandler(async (
 
   const skip = (Number(page) - 1) * Number(limit);
 
+  const cacheParams = {
+    title: title ?? null,
+    beds: beds ?? null,
+    status: status ?? null,
+    type: type ?? null,
+    minPrice: minPrice ?? null,
+    maxPrice: maxPrice ?? null,
+    page: page ?? "1",
+    limit: limit ?? "12",
+    sort: sort ?? "createdAt_desc",
+  };
+
+  let cacheKey: string | null = null;
+
+  try {
+    const cacheVersion = (await redis.get(ROOMS_CACHE_VERSION_KEY)) ?? "0";
+    cacheKey = `rooms:list:v${cacheVersion}:${JSON.stringify(cacheParams)}`;
+
+    const cachedData = await redis.get(cacheKey);
+    if (cachedData) {
+      res.status(200).json(JSON.parse(cachedData));
+      return;
+    }
+  } catch (error) {
+    logger.warn("Failed to read rooms cache", { error });
+  }
+
   const rooms = await prisma.room.findMany({
     where,
     include: { images: true },
@@ -239,7 +282,7 @@ export const getRooms = asyncHandler(async (
 
   const totalRooms = await prisma.room.count({ where });
 
-  res.status(200).json({
+  const responsePayload = {
     success: true,
     message: "Rooms fetched successfully",
     data: {
@@ -248,7 +291,21 @@ export const getRooms = asyncHandler(async (
       limit: Number(limit),
       rooms,
     }
-  });
+  };
+
+  if (cacheKey) {
+    try {
+      await redis.setex(
+        cacheKey,
+        ROOMS_CACHE_TTL_SECONDS,
+        JSON.stringify(responsePayload)
+      );
+    } catch (error) {
+      logger.warn("Failed to write rooms cache", { error });
+    }
+  }
+
+  res.status(200).json(responsePayload);
 });
 
 export const getSingleRoom = asyncHandler(async (
@@ -332,6 +389,8 @@ export const deleteRoom = asyncHandler(async (
   await prisma.room.delete({
     where: { id },
   });
+
+  await bumpRoomsCacheVersion();
 
   res.status(200).json({
     success: true,
